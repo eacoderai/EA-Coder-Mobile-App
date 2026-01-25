@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.DS_Store
+*.log
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Keep .env and .env.production for reference
+# but exclude .env.local for local development secrets
+
+# Ignore macOS metadata files
+._*

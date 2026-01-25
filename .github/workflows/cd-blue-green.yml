@@ -1,0 +1,215 @@
+name: Real-time Blue-Green Deployment
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+env:
+  RELEASE_SHA: ${{ github.sha }}
+  TIMESTAMP_UTC: ${{ github.event.head_commit.timestamp || github.run_id }}
+
+jobs:
+  build-web:
+    name: Build Web Artifact & Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: |
+          npm ci
+
+      - name: Build
+        run: |
+          npm run build
+
+      - name: Archive dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist-${{ env.RELEASE_SHA }}
+          path: dist
+
+      - name: Build Docker image (web)
+        env:
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+        run: |
+          echo "Building image ${REGISTRY_URL}/ea-coder-web:${RELEASE_SHA}"
+          docker build -f Dockerfile.web -t ${REGISTRY_URL}/ea-coder-web:${RELEASE_SHA} .
+
+      - name: Push image (web)
+        env:
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+        run: |
+          echo "Logging into registry ${REGISTRY_URL}"
+          echo "$REGISTRY_PASSWORD" | docker login ${REGISTRY_URL} -u "$REGISTRY_USERNAME" --password-stdin
+          docker push ${REGISTRY_URL}/ea-coder-web:${RELEASE_SHA}
+
+  deploy-blue-green:
+    name: Blue-Green Deploy to Production
+    needs: [ build-web ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare kubectl
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "$KUBE_CONFIG" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Determine active color
+        id: active
+        env:
+          KUBE_NAMESPACE: ${{ secrets.KUBE_NAMESPACE }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          set -euo pipefail
+          CURRENT=$(kubectl -n "$KUBE_NAMESPACE" get svc "$APP_NAME" -o jsonpath='{.spec.selector.version}' 2>/dev/null || echo "blue")
+          if [ -z "$CURRENT" ]; then CURRENT=blue; fi
+          echo "current=$CURRENT" >> $GITHUB_OUTPUT
+          if [ "$CURRENT" = "blue" ]; then NEXT=green; else NEXT=blue; fi
+          echo "next=$NEXT" >> $GITHUB_OUTPUT
+          echo "Active color: $CURRENT, Next color: $NEXT"
+
+      - name: Slack notify (start)
+        if: ${{ success() }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          curl -s -X POST -H 'Content-type: application/json' "$SLACK_WEBHOOK_URL" -d @- <<'JSON'
+          {
+            "text": "🚀 Starting blue-green deploy for ${APP_NAME}",
+            "attachments": [
+              { "color": "#439FE0", "text": "Release ${RELEASE_SHA} initiated." }
+            ]
+          }
+JSON
+
+      - name: Create/Update next deployment
+        env:
+          KUBE_NAMESPACE: ${{ secrets.KUBE_NAMESPACE }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+          REGISTRY_URL: ${{ secrets.REGISTRY_URL }}
+        run: |
+          chmod +x scripts/*.sh || true
+          set -euo pipefail
+          export COLOR="${{ steps.active.outputs.next }}"
+          export IMAGE="${REGISTRY_URL}/ea-coder-web:${RELEASE_SHA}"
+          scripts/deploy_blue_green.sh "$APP_NAME" "$KUBE_NAMESPACE" "$COLOR" "$IMAGE"
+
+      - name: Wait for rollout readiness
+        env:
+          KUBE_NAMESPACE: ${{ secrets.KUBE_NAMESPACE }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          set -euo pipefail
+          COLOR="${{ steps.active.outputs.next }}"
+          kubectl -n "$KUBE_NAMESPACE" rollout status deploy "$APP_NAME-$COLOR" --timeout=300s
+
+      - name: Health checks
+        id: health
+        env:
+          HEALTHCHECK_URLS: ${{ secrets.HEALTHCHECK_URLS }}
+        run: |
+          chmod +x scripts/*.sh || true
+          set +e
+          scripts/health_check.sh "$HEALTHCHECK_URLS"
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Switch service to next color (atomic traffic cutover)
+        if: ${{ steps.health.outputs.exit_code == '0' }}
+        env:
+          KUBE_NAMESPACE: ${{ secrets.KUBE_NAMESPACE }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          set -euo pipefail
+          COLOR="${{ steps.active.outputs.next }}"
+          kubectl -n "$KUBE_NAMESPACE" patch svc "$APP_NAME" -p "{\"spec\":{\"selector\":{\"app\":\"$APP_NAME\",\"version\":\"$COLOR\"}}}"
+
+      - name: Cleanup previous deployment
+        if: ${{ steps.health.outputs.exit_code == '0' }}
+        env:
+          KUBE_NAMESPACE: ${{ secrets.KUBE_NAMESPACE }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          set -euo pipefail
+          COLOR="${{ steps.active.outputs.current }}"
+          kubectl -n "$KUBE_NAMESPACE" delete deploy "$APP_NAME-$COLOR" --ignore-not-found
+
+      - name: Rollback on failure
+        if: ${{ steps.health.outputs.exit_code != '0' }}
+        env:
+          KUBE_NAMESPACE: ${{ secrets.KUBE_NAMESPACE }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          chmod +x scripts/*.sh || true
+          scripts/rollback.sh "$APP_NAME" "$KUBE_NAMESPACE" "${{ steps.active.outputs.current }}" "${{ steps.active.outputs.next }}"
+
+      - name: Collect deployment logs
+        if: always()
+        env:
+          KUBE_NAMESPACE: ${{ secrets.KUBE_NAMESPACE }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          set +e
+          kubectl -n "$KUBE_NAMESPACE" get all -l app="$APP_NAME" -o yaml > deploy-objects.yaml
+          kubectl -n "$KUBE_NAMESPACE" describe svc "$APP_NAME" > svc-describe.txt
+          kubectl -n "$KUBE_NAMESPACE" logs deploy/"$APP_NAME-${{ steps.active.outputs.next }}" --all-containers --tail=200 > deploy-logs.txt || true
+
+      - name: Upload logs (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-logs-${{ env.RELEASE_SHA }}
+          path: |
+            deploy-objects.yaml
+            svc-describe.txt
+            deploy-logs.txt
+
+      - name: Slack notify (success)
+        if: ${{ steps.health.outputs.exit_code == '0' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          curl -s -X POST -H 'Content-type: application/json' "$SLACK_WEBHOOK_URL" -d @- <<'JSON'
+          {
+            "text": "✅ Blue-green deploy succeeded for ${APP_NAME}",
+            "attachments": [
+              { "color": "good", "text": "Release ${RELEASE_SHA} is live across all servers." }
+            ]
+          }
+JSON
+
+      - name: Slack notify (failure)
+        if: ${{ steps.health.outputs.exit_code != '0' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          APP_NAME: ${{ secrets.APP_NAME }}
+        run: |
+          curl -s -X POST -H 'Content-type: application/json' "$SLACK_WEBHOOK_URL" -d @- <<'JSON'
+          {
+            "text": "❌ Blue-green deploy failed for ${APP_NAME}",
+            "attachments": [
+              { "color": "danger", "text": "Rollback executed. Investigate artifacts and logs." }
+            ]
+          }
+JSON

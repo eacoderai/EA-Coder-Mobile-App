@@ -1,0 +1,201 @@
+EA Coder – AI-Powered Expert Advisor Generator  
+Requirements Specification Document
+Version 1.0
+Last Updated: April 2025
+
+📌 1. Introduction
+
+1.1 Purpose
+This document outlines the functional and non-functional requirements for ‘EA Coder’, a mobile application that enables retail traders to generate, analyze, tweak, and convert algorithmic trading strategies (Expert Advisors) using natural language and AI. The app targets non-programmers who wish to automate trading strategies without writing MQL4/MQL5 or Pine Script code manually.
+
+ 1.2 Scope
+EA Coder will:
+- Allow users to describe trading strategies in plain English via a structured form.
+- Use AI (Claude-3.7-Sonnet) to generate production-ready MQL4, MQL5, or Pine Script code.
+- Provide an AI chat interface for iterative code refinement.
+- Offer cross-language code conversion (MQL4 ↔ MQL5 ↔ Pine Script).
+- Deliver AI-powered strategy analysis and simulated backtesting metrics.
+- Support secure user authentication and strategy history management.
+
+Out of Scope:
+- Live trading execution
+- Direct integration with MetaTrader or TradingView APIs
+- Real-time market data streaming
+- Full Monte Carlo or walk-forward backtesting (Phase 2+)
+
+ 🧑‍💻 2. User Roles
+
+| Role | Description |
+|------|-------------|
+| Guest | Can view app description and login/signup. Cannot access core features. |
+| Authenticated User | Can submit strategies, view generated code, chat with AI, convert code, and manage account. |
+
+📱 3. Functional Requirements
+
+ 3.1 Authentication & Account Management
+| ID | Requirement |
+|----|-----------|
+| FR-01 | Users shall be able to sign up using email/password or Google/Apple SSO. |
+| FR-02 | Users shall be able to log in and log out securely. |
+| FR-03 | Email verification shall be enforced after sign-up. |
+| FR-04 | Users shall be able to reset forgotten passwords. |
+| FR-05 | User profile (name, email) shall be editable in the app. |
+
+ 3.2 Strategy Submission
+| ID | Requirement |
+|----|-----------|
+| FR-06 | Users shall access a “Submit Strategy” form from the home screen. |
+| FR-07 | The form shall include: <br> - Full name (optional) <br> - Strategy description (required, min. 20 chars) <br> - Risk management rules (optional) <br> - Instrument dropdown (e.g., EURUSD, XAUUSD) <br> - Platform/language dropdown (MQL4, MQL5, Pine Script v5) |
+| FR-08 | A “Help & Examples” button shall provide common strategy templates (e.g., “RSI < 30 buy signal”). |
+| FR-09 | Form submission shall trigger AI code generation via backend. |
+| FR-10 | Submitted strategies shall be saved to Firestore under the user’s ID. |
+
+ 3.3 AI Code Generation
+| ID | Requirement |
+|----|-----------|
+| FR-11 | Upon form submission, a Cloud Function shall invoke the Anthropic Claude Sonnet 4.5 model with a structured prompt. |
+| FR-12 | The AI shall generate syntactically valid, non-repainting code in the selected language. |
+| FR-13 | Generated code shall be stored in Firestore and linked to the original strategy. |
+| FR-14 | Users shall receive a success/error status update in real time. |
+| FR-15 | If generation fails, users shall see an error message with retry option. |
+
+ 3.4 Code Assistant (Results View)
+| ID | Requirement |
+|----|-----------|
+| FR-16 | Users shall view generated code in a syntax-highlighted code block. |
+| FR-17 | A “Copy Code” button shall copy the entire code to clipboard. |
+| FR-18 | A “Download .mq5 / .pine” button shall allow file download (via Expo FileSystem or Firebase Storage). |
+| FR-19 | Clear instructions shall guide users on how to use the code in MetaTrader/TradingView. |
+| FR-20 | A safety disclaimer shall state: “Test on demo account before live use.” |
+
+ 3.5 AI Chat Interface (Code Tweak Mode)
+| ID | Requirement |
+|----|-----------|
+| FR-21 | From the code view, users shall access an AI chat interface. |
+| FR-22 | Users shall send natural language requests (e.g., “Add trailing stop of 50 pips”). |
+| FR-23 | The AI shall respond with a fully updated code block (no explanations). |
+| FR-24 | Chat history shall be persisted in Firestore per strategy. |
+| FR-25 | Only the last 5 messages shall be sent as context to Claude Sonnet 4.5 to control cost/latency. |
+
+ 3.6 Code Converter
+| ID | Requirement |
+|----|-----------|
+| FR-26 | Users shall access a “Convert Code” tab. |
+| FR-27 | Users shall paste source code and select source/target languages. |
+| FR-28 | The AI shall convert code while preserving core logic. |
+| FR-29 | A warning shall display: “Language semantics differ. Verify logic manually.” |
+| FR-30 | Converted code shall be copyable and downloadable. |
+
+ 3.7 Strategy Analysis & Backtesting (Simulated)
+| ID | Requirement |
+|----|-----------|
+| FR-31 | After code generation, the app shall display simulated backtest metrics (if available): <br> - Win Rate (%) <br> - Profit Factor <br> - Max Drawdown (%) <br> - Expected Return |
+| FR-32 | Metrics shall be generated by a cloud-based backtesting microservice (Python + Backtrader). |
+| FR-33 | If backtesting is unavailable, show “Analysis in progress…” with retry option. |
+
+ 3.8 Navigation & UI
+| ID | Requirement |
+|----|-----------|
+| FR-34 | Bottom navigation bar shall include: Home, Analyze, Chat, Convert, Profile. |
+| FR-35 | App shall support dark mode. |
+| FR-36 | All screens shall have loading states during AI/network operations. |
+| FR-37 | Empty states shall guide new users (e.g., “Submit your first strategy”). |
+
+---
+
+ ⚙️ 4. Non-Functional Requirements
+
+ 4.1 Performance
+| ID | Requirement |
+|----|-----------|
+| NFR-01 | Strategy form submission → code generation shall complete within 15 seconds (p95). |
+| NFR-02 | AI chat responses shall stream within 8 seconds (p90). |
+| NFR-03 | App shall remain responsive during background AI operations. |
+
+ 4.2 Security
+| ID | Requirement |
+|----|-----------|
+| NFR-04 | All user data shall be encrypted in transit (HTTPS) and at rest (Firestore encryption). |
+| NFR-05 | Firestore security rules shall restrict data access to the authenticated user only. |
+| NFR-06 | AI API keys shall never be exposed in the Expo app; all calls shall go through Firebase Cloud Functions. |
+| NFR-07 | Generated code shall be sanitized to block dangerous MQL functions (e.g., `FileWrite`, `SendMail`). |
+
+ 4.3 Reliability
+| ID | Requirement |
+|----|-----------|
+| NFR-08 | App shall handle AI service downtime gracefully (retry UI + error messaging). |
+| NFR-09 | Failed strategy submissions shall be retryable. |
+
+ 4.4 Usability
+| ID | Requirement |
+|----|-----------|
+| NFR-10 | First-time users shall complete onboarding in < 2 minutes. |
+| NFR-11 | All interactive elements shall meet WCAG 2.1 accessibility standards. |
+| NFR-12 | App shall support iOS and Android (via Expo). |
+
+ 4.5 Maintainability
+| ID | Requirement |
+|----|-----------|
+| NFR-13 | Codebase shall follow React Native best practices (modular components, hooks). |
+| NFR-14 | Cloud Functions shall be versioned and monitored (Firebase + Sentry). |
+
+🗃️ 5. Data Model (Firestore)
+
+ Collections
+| Collection | Fields |
+|-----------|--------|
+| `users` | `uid`, `name`, `email`, `createdAt` |
+| `strategies` | `userId`, `status` (`pending`/`generated`/`error`), `input` (object), `outputCode`, `backtestResult`, `createdAt` |
+| `strategies/{strategyId}/chats` | `role` (`user`/`assistant`), `content`, `timestamp` |
+| `conversions` | `userId`, `fromLang`, `toLang`, `originalCode`, `convertedCode`, `createdAt` |
+
+ 🌐 6. External Integrations
+
+| Service | Purpose |
+|--------|--------|
+| Firebase Auth | User authentication |
+| Firebase Firestore | Strategy, chat, and user data storage |
+| Firebase Cloud Functions | Backend logic, AI orchestration |
+| Anthropic Claude Sonnet 4.5 | Code generation, conversion, and chat |
+| Backtesting Microservice | Simulated performance metrics (Python/Backtrader) |
+| Expo FileSystem | Local file handling (optional) |
+
+
+ 📜 8. Compliance & Disclaimers
+
+- The app shall display:  
+  > “EA Coder generates algorithmic trading code using AI. This is not financial advice. Always test strategies on a demo account before live trading. Past performance is not indicative of future results.”
+- GDPR/CCPA compliance for user data collection.
+- No collection of trading account credentials or live trading data.
+
+
+ 🔄 9. Future Enhancements (Post-MVP)
+
+- Live backtesting with MetaTrader 5 Strategy Tester (via cloud Windows instance)
+- Strategy marketplace (users share/sell EAs)
+- Multi-timeframe and multi-asset strategy support
+- Email/SMS notifications for strategy status
+- Advanced risk management templates (Kelly Criterion, volatility scaling)
+
+
+> Document Owner: Christopher Anthony  
+> Review Cycle: Bi-weekly during development  
+> Next Review Date: May 15, 2025 
+
+End of Requirements Document
+
+🧪 10. Testing Notes (Free Generations & Strategy Creation)
+
+- Ensure the backend usage endpoint `GET /make-server-00a119be/usage` returns `{ count, remaining, window }` for an authenticated user.
+- Scenario: Basic user with remaining > 0
+  - Open the app, sign in.
+  - Confirm the UI shows remaining generations.
+  - Submit a new strategy via “Submit Strategy” → form.
+  - Expect: strategy creation succeeds; no 403 error; a success toast and notification appear.
+- Scenario: Basic user with remaining = 0
+  - Attempt to submit a strategy.
+  - Expect: info/error toast explains limit; user is redirected to Subscription.
+  - Console shows a lightweight `console.warn` for 403, not a verbose error object.
+- Scenario: Premium user
+  - Strategy creation is unrestricted.
+  - No gating messages or redirects.

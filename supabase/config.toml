@@ -1,0 +1,5 @@
+# supabase/config.toml
+
+[functions.server]
+  entrypoint = "./functions/server/index.ts"
+  verify_jwt = false

@@ -1,0 +1,45 @@
+name: Deploy Supabase Edge Function
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit SHA or ref to deploy (for rollback)
+        required: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+      - name: Run server function tests
+        run: deno test supabase/functions/server/tests/*.ts
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.sha }}
+      - uses: supabase/setup-cli@v1
+      - name: Set project secrets (version, timing)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase secrets set \
+            --project-ref ${{ secrets.SUPABASE_PROJECT_ID }} \
+            RELEASE_SHA=${{ github.sha }} \
+            DEPLOYED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+            LOG_LEVEL=info \
+            SLOW_REQUEST_MS=1500
+      - name: Deploy Edge Function
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy server --project-ref ${{ secrets.SUPABASE_PROJECT_ID }}

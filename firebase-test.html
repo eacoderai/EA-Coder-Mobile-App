@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firebase Functions Test</title>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-functions-compat.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button {
+      background-color: #4285f4;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background-color: #3367d6;
+    }
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      border: 1px solid #ddd;
+      padding: 8px;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow: auto;
+      max-height: 300px;
+    }
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid rgba(255,255,255,.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 1s ease-in-out infinite;
+      margin-right: 10px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <h1>Firebase Functions Test</h1>
+  
+  <div class="card">
+    <h2>Generate Trading Code</h2>
+    <div>
+      <textarea id="strategy-description" placeholder="Enter strategy description...">Buy when RSI(14) < 30, sell when RSI(14) > 70. Use 50 pip stop loss and 100 pip take profit.</textarea>
+    </div>
+    <div style="margin-bottom: 10px;">
+      <label for="instrument">Instrument:</label>
+      <select id="instrument">
+        <option value="EURUSD">EURUSD</option>
+        <option value="GBPUSD">GBPUSD</option>
+        <option value="USDJPY">USDJPY</option>
+      </select>
+      
+      <label for="platform" style="margin-left: 20px;">Platform:</label>
+      <select id="platform">
+        <option value="mql4">MQL4</option>
+        <option value="mql5">MQL5</option>
+        <option value="pinescript">Pine Script</option>
+      </select>
+    </div>
+    <button id="generate-btn" onclick="generateCode()">Generate Code</button>
+    <div id="generate-result" style="margin-top: 15px;"></div>
+  </div>
+  
+  <div class="card">
+    <h2>Chat with AI</h2>
+    <div>
+      <textarea id="chat-message" placeholder="Enter your message...">Can you add a trailing stop loss to the strategy?</textarea>
+    </div>
+    <button id="chat-btn" onclick="sendChatMessage()">Send Message</button>
+    <div id="chat-result" style="margin-top: 15px;"></div>
+  </div>
+  
+  <div class="card">
+    <h2>Convert Code</h2>
+    <div>
+      <textarea id="source-code" placeholder="Enter source code...">// Example MQL4 code
+void OnTick() {
+  double rsi = iRSI(Symbol(), PERIOD_H1, 14, PRICE_CLOSE, 0);
+  if (rsi < 30) OpenBuy();
+  if (rsi > 70) OpenSell();
+}</textarea>
+    </div>
+    <div style="margin-bottom: 10px;">
+      <label for="from-lang">From:</label>
+      <select id="from-lang">
+        <option value="mql4">MQL4</option>
+        <option value="mql5">MQL5</option>
+        <option value="pinescript">Pine Script</option>
+      </select>
+      
+      <label for="to-lang" style="margin-left: 20px;">To:</label>
+      <select id="to-lang">
+        <option value="mql4">MQL4</option>
+        <option value="mql5" selected>MQL5</option>
+        <option value="pinescript">Pine Script</option>
+      </select>
+    </div>
+    <button id="convert-btn" onclick="convertCode()">Convert Code</button>
+    <div id="convert-result" style="margin-top: 15px;"></div>
+  </div>
+
+  <script>
+    // Initialize Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyDEA_coder_app_key_placeholder",
+      authDomain: "ea-coder-app.firebaseapp.com",
+      projectId: "ea-coder-app",
+      storageBucket: "ea-coder-app.appspot.com",
+      messagingSenderId: "123456789012",
+      appId: "1:123456789012:web:abcdef1234567890abcdef"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    
+    // Connect to Functions emulator when in development
+    const isDevelopment = window.location.hostname === 'localhost';
+    if (isDevelopment) {
+      firebase.functions().useEmulator('localhost', 5001);
+    }
+    
+    // Generate Trading Code
+    async function generateCode() {
+      const generateBtn = document.getElementById('generate-btn');
+      const resultDiv = document.getElementById('generate-result');
+      
+      generateBtn.disabled = true;
+      generateBtn.innerHTML = '<span class="loading"></span>Generating...';
+      resultDiv.innerHTML = '';
+      
+      try {
+        const description = document.getElementById('strategy-description').value;
+        const instrument = document.getElementById('instrument').value;
+        const platform = document.getElementById('platform').value;
+        
+        // For demo purposes, we'll simulate the function call
+        setTimeout(() => {
+          const result = {
+            strategyId: 'demo-' + Math.random().toString(36).substring(2, 8),
+            code: `// Generated ${platform.toUpperCase()} code for ${instrument}\n// Strategy: ${description}\n\n// This is simulated code\nvoid OnTick() {\n  // Strategy implementation\n  double rsi = iRSI(Symbol(), PERIOD_H1, 14, PRICE_CLOSE, 0);\n  if (rsi < 30) OpenBuy();\n  if (rsi > 70) OpenSell();\n}`
+          };
+          
+          resultDiv.innerHTML = `<p>Strategy ID: ${result.strategyId}</p><pre>${result.code}</pre>`;
+          generateBtn.disabled = false;
+          generateBtn.textContent = 'Generate Code';
+        }, 1500);
+        
+        // Uncomment this to use actual Firebase function
+        /*
+        const generateTradingCode = firebase.functions().httpsCallable('generateTradingCode');
+        const result = await generateTradingCode({
+          description,
+          instrument,
+          platform,
+          riskRules: 'Max 2% risk per trade',
+          strategyName: 'Test Strategy'
+        });
+        
+        resultDiv.innerHTML = `<p>Strategy ID: ${result.data.strategyId}</p><pre>${result.data.code}</pre>`;
+        */
+      } catch (error) {
+        resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+      } finally {
+        generateBtn.disabled = false;
+        generateBtn.textContent = 'Generate Code';
+      }
+    }
+    
+    // Chat with AI
+    async function sendChatMessage() {
+      const chatBtn = document.getElementById('chat-btn');
+      const resultDiv = document.getElementById('chat-result');
+      
+      chatBtn.disabled = true;
+      chatBtn.innerHTML = '<span class="loading"></span>Sending...';
+      
+      try {
+        const message = document.getElementById('chat-message').value;
+        
+        // For demo purposes, we'll simulate the function call
+        setTimeout(() => {
+          const response = {
+            message: `I can help you add a trailing stop loss to your strategy. Here's how you can modify your code:\n\n\`\`\`\nvoid OnTick() {\n  // Your existing code\n  double rsi = iRSI(Symbol(), PERIOD_H1, 14, PRICE_CLOSE, 0);\n  if (rsi < 30) OpenBuyWithTrailingStop();\n  if (rsi > 70) OpenSellWithTrailingStop();\n}\n\n// New function with trailing stop\nvoid OpenBuyWithTrailingStop() {\n  int ticket = OrderSend(Symbol(), OP_BUY, 0.1, Ask, 3, Bid-StopLoss*Point, Bid+TakeProfit*Point);\n  if(ticket > 0) {\n    OrderModify(ticket, OrderOpenPrice(), OrderStopLoss(), OrderTakeProfit(), 0, CLR_NONE);\n    // Enable trailing stop\n    OrderSelect(ticket, SELECT_BY_TICKET);\n    OrderModify(OrderTicket(), OrderOpenPrice(), OrderStopLoss(), OrderTakeProfit(), 0, Green);\n    // Set trailing stop of 30 pips\n    OrderSelect(ticket, SELECT_BY_TICKET, MODE_TRADES);\n    bool trail = OrderModify(OrderTicket(), OrderOpenPrice(), OrderStopLoss(), OrderTakeProfit(), 30, Green);\n  }\n}\n\`\`\``
+          };
+          
+          resultDiv.innerHTML = `<pre>${response.message}</pre>`;
+          chatBtn.disabled = false;
+          chatBtn.textContent = 'Send Message';
+        }, 1500);
+        
+        // Uncomment this to use actual Firebase function
+        /*
+        const chatWithAI = firebase.functions().httpsCallable('chatWithAI');
+        const result = await chatWithAI({
+          strategyId: 'demo-strategy',
+          message,
+          chatHistory: []
+        });
+        
+        resultDiv.innerHTML = `<pre>${result.data.response}</pre>`;
+        */
+      } catch (error) {
+        resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+      } finally {
+        chatBtn.disabled = false;
+        chatBtn.textContent = 'Send Message';
+      }
+    }
+    
+    // Convert Code
+    async function convertCode() {
+      const convertBtn = document.getElementById('convert-btn');
+      const resultDiv = document.getElementById('convert-result');
+      
+      convertBtn.disabled = true;
+      convertBtn.innerHTML = '<span class="loading"></span>Converting...';
+      
+      try {
+        const sourceCode = document.getElementById('source-code').value;
+        const fromLang = document.getElementById('from-lang').value;
+        const toLang = document.getElementById('to-lang').value;
+        
+        // For demo purposes, we'll simulate the function call
+        setTimeout(() => {
+          const result = {
+            convertedCode: `// Converted from ${fromLang} to ${toLang}\n\n// This is simulated converted code\nvoid OnTick() {\n  double rsi = iRSI(_Symbol, PERIOD_H1, 14, PRICE_CLOSE, 0);\n  if (rsi < 30) {\n    trade.Buy(0.1, _Symbol, 0, 0, 0, "RSI Buy");\n  }\n  if (rsi > 70) {\n    trade.Sell(0.1, _Symbol, 0, 0, 0, "RSI Sell");\n  }\n}`
+          };
+          
+          resultDiv.innerHTML = `<pre>${result.convertedCode}</pre>`;
+          convertBtn.disabled = false;
+          convertBtn.textContent = 'Convert Code';
+        }, 1500);
+        
+        // Uncomment this to use actual Firebase function
+        /*
+        const convertCode = firebase.functions().httpsCallable('convertCode');
+        const result = await convertCode({
+          sourceCode,
+          fromLang,
+          toLang
+        });
+        
+        resultDiv.innerHTML = `<pre>${result.data.convertedCode}</pre>`;
+        */
+      } catch (error) {
+        resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
+      } finally {
+        convertBtn.disabled = false;
+        convertBtn.textContent = 'Convert Code';
+      }
+    }
+  </script>
+</body>
+</html>

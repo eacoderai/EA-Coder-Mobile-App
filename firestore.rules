@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow users to read and write only their own data
+    match /strategies/{strategyId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+      
+      // Allow access to chat subcollection
+      match /chats/{chatId} {
+        allow read, write: if request.auth != null && request.auth.uid == get(/databases/$(database)/documents/strategies/$(strategyId)).data.userId;
+      }
+    }
+    
+    // Allow users to read and write only their own conversions
+    match /conversions/{conversionId} {
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.userId;
+    }
+  }
+}

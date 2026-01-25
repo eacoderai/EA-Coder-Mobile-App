@@ -1,0 +1,491 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-size: 16px;
+  --background: #ffffff;
+  --foreground: oklch(0.145 0 0);
+  --card: #ffffff;
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: #030213;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95 0.0058 264.53);
+  --secondary-foreground: #030213;
+  --muted: #ececf0;
+  --muted-foreground: #717182;
+  --accent: #e9ebef;
+  --accent-foreground: #030213;
+  --destructive: #d4183d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.1);
+  --input: transparent;
+  --input-background: #f3f3f5;
+  --switch-background: #cbced4;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: #030213;
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/**
+ * Base typography. This is not applied to elements which have an ancestor with a Tailwind text class.
+ */
+@layer base {
+  :where(:not(:has([class*=" text-"]), :not(:has([class^="text-"])))) {
+    h1 {
+      font-size: var(--text-2xl);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h2 {
+      font-size: var(--text-xl);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h3 {
+      font-size: var(--text-lg);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    h4 {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    p {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-normal);
+      line-height: 1.5;
+    }
+
+    label {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    button {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-medium);
+      line-height: 1.5;
+    }
+
+    input {
+      font-size: var(--text-base);
+      font-weight: var(--font-weight-normal);
+      line-height: 1.5;
+    }
+  }
+}
+
+html {
+  /* Fluid base font size for mobile responsiveness */
+  font-size: clamp(14px, 1.6vw, 18px);
+  /* Prevent horizontal scroll and ensure full-viewport layout */
+  width: 100%;
+  overflow-x: hidden;
+}
+
+/* Mobile-first responsive foundation */
+@layer base {
+  :root {
+    --touch-target: 48px;
+    --app-gap: 8px;
+  }
+
+  html, body, #root {
+    height: 100%;
+    min-height: 100vh;
+  }
+
+  #root {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Eliminate unnecessary outer gutters while respecting safe areas */
+  body, main, section, header, footer {
+    margin: 0;
+    padding: 0;
+    padding-left: max(env(safe-area-inset-left), 0px);
+    padding-right: max(env(safe-area-inset-right), 0px);
+  }
+
+  /* Ensure content containers don’t cause horizontal overflow */
+  .container, .content, .card, .panel, .section, main, section {
+    max-width: 100%;
+    overflow-wrap: break-word;
+  }
+
+  /* Make media responsive */
+  img, video, canvas {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Touch target sizing */
+  button,
+  [role="button"],
+  .btn,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  .radix-
+  {
+    min-height: var(--touch-target);
+    min-width: var(--touch-target);
+    padding: 12px 16px;
+  }
+
+  /* Avoid accidental taps – maintain spacing between adjacent controls */
+  button + button,
+  .btn + .btn,
+  [role="button"] + [role="button"] {
+    margin-left: var(--app-gap);
+  }
+
+  /* Scroll areas should be touch-optimized */
+  .scroll-container,
+  .scroll-area,
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Prevent layout shift due to long words/URLs */
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+/* Media queries for common mobile widths */
+@media (max-width: 414px) {
+  html { font-size: clamp(14px, 2.2vw, 17px); }
+}
+
+@media (max-width: 375px) {
+  html { font-size: clamp(13px, 2.6vw, 16px); }
+}
+
+@media (max-width: 360px) {
+  html { font-size: clamp(13px, 2.8vw, 16px); }
+}
+
+  /* Tablet and above – relax scaling slightly */
+  @media (min-width: 768px) {
+    html { font-size: clamp(15px, 1.2vw, 18px); }
+  }
+
+/* Render eye icon inside password inputs via background-image */
+.password-icon {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'></path><circle cx='12' cy='12' r='3'></circle></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 20px 20px;
+  padding-right: 2.5rem; /* ensure text doesn’t overlap icon */
+  color: var(--muted-foreground);
+  transition: color 0.2s ease;
+}
+
+/* Eye icon when password is hidden (type='password') */
+  .password-icon--hidden {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'></path><circle cx='12' cy='12' r='3'></circle></svg>");
+  }
+
+.invisible-accessible {
+  opacity: 0 !important;
+  visibility: visible !important;
+}
+
+.invisible-accessible:focus {
+  opacity: 0 !important;
+}
+
+/* Eye-off icon when password is visible (type='text') */
+.password-icon--visible {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0'></path><circle cx='12' cy='12' r='3'></circle><path d='M3 3l18 18'></path></svg>");
+}
+
+/* Darken icon on hover of the parent group */
+.group:hover .password-icon {
+  color: var(--foreground);
+}
+
+/* Default UI Button corners: 10px (with prefixes) */
+button[data-slot="button"] {
+  -webkit-border-radius: 10px;
+  -moz-border-radius: 10px;
+  border-radius: 10px;
+  -webkit-background-clip: padding-box;
+  background-clip: padding-box;
+  /* Ensure button text fits within the button */
+  white-space: normal;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  hyphens: auto;
+  text-align: center;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Icon buttons are truly circular */
+button[data-slot="button"].size-9,
+button[data-slot="button"].size-12,
+button[data-slot="button"].rounded-full {
+  -webkit-border-radius: 9999px;
+  -moz-border-radius: 9999px;
+  border-radius: 9999px;
+}
+
+/* Generic circular buttons (not switches) should be perfect circles and meet touch targets */
+button.rounded-full:not([data-slot="switch"]) {
+  width: var(--touch-target);
+  height: var(--touch-target);
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+  aspect-ratio: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-border-radius: 9999px;
+  -moz-border-radius: 9999px;
+  border-radius: 9999px;
+}
+
+/* Override common raw button radius classes to the app's 10px standard */
+button.rounded-md:not([data-slot="switch"]),
+button.rounded-lg:not([data-slot="switch"]),
+button.rounded-xl:not([data-slot="switch"]) {
+  -webkit-border-radius: 10px;
+  -moz-border-radius: 10px;
+  border-radius: 10px;
+  -webkit-background-clip: padding-box;
+  background-clip: padding-box;
+}
+
+/* 30px corners for Auth Tabs trigger buttons (Login/Sign Up) */
+button[data-slot="tabs-trigger"] {
+  -webkit-border-radius: 30px;
+  -moz-border-radius: 30px;
+  border-radius: 30px;
+  -webkit-background-clip: padding-box;
+  background-clip: padding-box;
+}
+
+/* Apply app corner radius to switches (track) */
+button[data-slot="switch"],
+button[data-slot="switch"].rounded-full {
+  -webkit-border-radius: 10px;
+  -moz-border-radius: 10px;
+  border-radius: 10px;
+  -webkit-background-clip: padding-box;
+  background-clip: padding-box;
+  overflow: hidden; /* keep thumb inside rounded track */
+}
+
+/* Prevent divider line from overlapping the span text, maintain responsiveness */
+div.relative.flex.justify-center.text-xs.uppercase {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 0;
+}
+
+div.relative.flex.justify-center.text-xs.uppercase::before,
+div.relative.flex.justify-center.text-xs.uppercase::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background-color: var(--muted-foreground);
+  opacity: 0.6;
+  z-index: 1;
+}
+
+div.relative.flex.justify-center.text-xs.uppercase > span {
+  position: relative;
+  z-index: 2;
+  padding-inline: 8px;
+  background-color: var(--background);
+  /* Wrap gracefully and avoid overlap across breakpoints */
+  white-space: normal;
+  text-wrap: balance;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* Hide the underlying Separator line for the centered label pattern */
+div.relative > div.absolute.inset-0.flex.items-center [data-slot="separator-root"] {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  div.relative.flex.justify-center.text-xs.uppercase {
+    gap: 8px;
+  }
+
+  div.relative.flex.justify-center.text-xs.uppercase > span {
+    padding-inline: 6px;
+  }
+}
+.nav-wrapper {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: constant(safe-area-inset-bottom);
+  z-index: 50;
+}
+
+
+.bottom-nav {
+  position: relative;
+  z-index: 1;
+  padding-bottom: 0;
+  background-color: inherit;
+}
+
+.safe-fill {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-top: constant(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-left: constant(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-right: constant(safe-area-inset-right);
+  box-sizing: border-box;
+}
+.app-container {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 28rem;
+  padding-inline: 9px;
+  box-sizing: border-box;
+}
+
+@media (min-width: 640px) {
+  .app-container { max-width: 32rem; }
+}
+@media (min-width: 768px) {
+  .app-container { max-width: 36rem; }
+}
+@media (min-width: 1024px) {
+  .app-container { max-width: 42rem; }
+}
+@media (min-width: 1280px) {
+  .app-container { max-width: 48rem; }
+}
+
+.safe-nav-pad {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(64px + constant(safe-area-inset-bottom));
+}

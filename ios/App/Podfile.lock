@@ -1,0 +1,28 @@
+PODS:
+  - Capacitor (6.2.1):
+    - CapacitorCordova
+  - CapacitorCordova (6.2.1)
+  - CapacitorStatusBar (6.0.3):
+    - Capacitor
+
+DEPENDENCIES:
+  - "Capacitor (from `../../node_modules/.deno/@capacitor+ios@6.2.1/node_modules/@capacitor/ios`)"
+  - "CapacitorCordova (from `../../node_modules/.deno/@capacitor+ios@6.2.1/node_modules/@capacitor/ios`)"
+  - "CapacitorStatusBar (from `../../node_modules/.deno/@capacitor+status-bar@6.0.3/node_modules/@capacitor/status-bar`)"
+
+EXTERNAL SOURCES:
+  Capacitor:
+    :path: "../../node_modules/.deno/@capacitor+ios@6.2.1/node_modules/@capacitor/ios"
+  CapacitorCordova:
+    :path: "../../node_modules/.deno/@capacitor+ios@6.2.1/node_modules/@capacitor/ios"
+  CapacitorStatusBar:
+    :path: "../../node_modules/.deno/@capacitor+status-bar@6.0.3/node_modules/@capacitor/status-bar"
+
+SPEC CHECKSUMS:
+  Capacitor: 1e0d0e7330dea9f983b50da737d8918abcf273f8
+  CapacitorCordova: 8d93e14982f440181be7304aa9559ca631d77fff
+  CapacitorStatusBar: 38665f1a18c55677098367a29f6b42126b72dc65
+
+PODFILE CHECKSUM: e3a5eca3b854904c6fd27888991aa21efe9d2975
+
+COCOAPODS: 1.16.2

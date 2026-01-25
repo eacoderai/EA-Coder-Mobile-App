@@ -1,0 +1,41 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b64d3" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>EA Coder Mobile App</title>
+    <script>
+      // Prevent direct loading of TSX files
+      window.addEventListener('error', function(e) {
+        if (e.target.tagName === 'LINK' || e.target.tagName === 'SCRIPT') {
+          if (e.target.src && e.target.src.endsWith('.tsx')) {
+            e.preventDefault();
+          }
+        }
+      }, true);
+      // Opportunistically enable lazy-loading for images
+      (function(){
+        const enableLazy = () => {
+          document.querySelectorAll('img:not([loading])').forEach(img => {
+            img.setAttribute('loading', 'lazy');
+            img.setAttribute('decoding', 'async');
+          });
+        };
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          enableLazy();
+        } else {
+          document.addEventListener('DOMContentLoaded', enableLazy, { once: true });
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+  

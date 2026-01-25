@@ -1,0 +1,47 @@
+require_relative '../../node_modules/@capacitor/ios/scripts/pods_helpers'
+
+platform :ios, '13.0'
+use_frameworks!
+
+# workaround to avoid Xcode caching of Pods that requires
+# Product -> Clean Build Folder after new Cordova plugins installed
+# Requires CocoaPods 1.6 or newer
+install! 'cocoapods', :disable_input_output_paths => true
+
+def capacitor_pods
+  pod 'Capacitor', :path => '../../node_modules/@capacitor/ios'
+  pod 'CapacitorCordova', :path => '../../node_modules/@capacitor/ios'
+  pod 'CapacitorStatusBar', :path => '../../node_modules/@capacitor/status-bar'
+end
+
+target 'App' do
+  capacitor_pods
+  # Add your Pods here
+end
+
+def set_run_script_to_always_run_when_no_io_files_exist(project:)
+  project.targets.each do |target|
+    run_script_phases = target.build_phases.select { |p| p.is_a?(Xcodeproj::Project::Object::PBXShellScriptBuildPhase) }
+    cp_phases = run_script_phases.select { |p| p.name && p.name.start_with?("[CP]") }
+    cp_phases.each do |phase|
+      has_no_inputs = (phase.input_paths || []).empty?
+      has_no_outputs = (phase.output_paths || []).empty?
+      if has_no_inputs && has_no_outputs
+        phase.always_out_of_date = '1' # Uncheck "Based on dependency analysis"
+      end
+    end
+  end
+  project.save
+end
+
+post_install do |installer|
+  assertDeploymentTarget(installer)
+  # Ensure Pods project CP script phases run without warnings when IO paths are disabled
+  set_run_script_to_always_run_when_no_io_files_exist(project: installer.pods_project)
+end
+
+# Do the same on the user project so changes persist across installs
+post_integrate do |installer|
+  user_project = installer.aggregate_targets[0].user_project
+  set_run_script_to_always_run_when_no_io_files_exist(project: user_project)
+end

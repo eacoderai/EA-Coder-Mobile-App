@@ -1,0 +1,79 @@
+.chatInputBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 auto;
+  border-radius: 24px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  background-color: var(--card, #ffffff);
+  transition: box-shadow 180ms ease, transform 180ms ease, background-color 180ms ease;
+}
+
+.chatInputBar:focus-within {
+  box-shadow: 0 8px 22px rgba(59, 130, 246, 0.18);
+}
+
+.chatInput {
+  flex: 1 1 auto;
+  min-height: 48px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: clamp(0.875rem, 2.8vw, 1rem);
+  color: var(--foreground, #111827);
+}
+
+.chatInput::placeholder {
+  color: rgba(17, 24, 39, 0.6);
+}
+
+.sendButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: #ffffff;
+  color: #1e3a8a;
+  border: 1px solid rgba(30, 58, 138, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease, color 160ms ease;
+  transform: translateY(-2px);
+}
+
+.sendButton:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 18px rgba(30, 58, 138, 0.18);
+  background-color: #f8fafc;
+}
+
+.sendButton:active {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(30, 58, 138, 0.18);
+}
+
+.sendButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (prefers-color-scheme: dark) {
+  .chatInputBar {
+    background-color: rgba(17, 24, 39, 0.75);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    backdrop-filter: saturate(120%) blur(6px);
+  }
+  .chatInput {
+    color: #ffffff;
+  }
+  .chatInput::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+  }
+  .sendButton {
+    background-color: rgba(255, 255, 255, 0.92);
+    color: #1e3a8a;
+    border-color: rgba(148, 163, 184, 0.25);
+  }
+}

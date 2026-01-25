@@ -1,0 +1,83 @@
+/* Global resets and viewport optimization for mobile containers */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--background);
+  background-color: var(--background);
+}
+
+/* Safe area variables */
+:root {
+  /* Fallback */
+  --viewport-height: 100vh;
+  --viewport-width: 100vw;
+  /* Safe area insets (fallback to 0 with max()) */
+  --safe-top: max(env(safe-area-inset-top), 0px);
+  --safe-right: max(env(safe-area-inset-right), 0px);
+  --safe-bottom: max(env(safe-area-inset-bottom), 0px);
+  --safe-left: max(env(safe-area-inset-left), 0px);
+  /* Fixed bottom nav height used across app (h-16 = 4rem) */
+  --bottom-nav-height: 4rem;
+}
+
+/* Prefer dynamic viewport height where supported */
+@supports (height: 100svh) {
+  :root { --viewport-height: 100svh; }
+}
+@supports (height: 100dvh) {
+  :root { --viewport-height: 100dvh; }
+}
+
+.mobile-container {
+  position: relative;
+  box-sizing: border-box;
+  width: var(--viewport-width);
+  min-height: var(--viewport-height);
+  height: var(--viewport-height);
+  overflow: hidden; /* prevent layout overflow at edges */
+  contain: layout size style paint; /* CSS containment for performance/overflow */
+  /* Let header backgrounds paint edge-to-edge under the status bar */
+  /* Top safe-area inset is handled by individual screens as needed */
+  /* padding-top: var(--safe-top); */
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  padding-left: constant(safe-area-inset-left);
+  padding-right: constant(safe-area-inset-right);
+  background: var(--background);
+  background-color: var(--background);
+}
+
+/* Inner scroll region for content screens */
+.mobile-scroll {
+  position: relative;
+  /* Fill the viewport minus the bottom safe area only */
+  height: calc(var(--viewport-height) - var(--safe-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  /* Ensure content does not hide beneath the bottom nav and safe area */
+  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom));
+  padding-bottom: calc(var(--bottom-nav-height) + constant(safe-area-inset-bottom));
+}
+
+/* Visual debugging markers (enable by adding data-debug="true" to container) */
+.mobile-container[data-debug="true"] {
+  outline: 2px dashed rgba(70, 130, 180, 0.8);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(70, 130, 180, 0.15),
+    rgba(70, 130, 180, 0.15) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+}
+
+/* Orientation adjustments */
+@media (orientation: landscape) {
+  .mobile-container {
+    /* In landscape, reserve extra bottom padding for gesture bar on phones */
+    padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom));
+  }
+}

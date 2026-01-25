@@ -1,0 +1,11 @@
+{
+  "deno.enable": true,
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore",
+  "tailwindCSS.showPixelEquivalents": true,
+  "tailwindCSS.includeLanguages": {
+    "typescript": "javascript",
+    "typescriptreact": "javascript"
+  }
+}
