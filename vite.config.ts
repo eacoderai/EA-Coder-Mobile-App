@@ -59,7 +59,6 @@ import { defineConfig, loadEnv } from 'vite';
     },
     build: {
       target: 'esnext',
-      outDir: 'build',
     },
     server: {
         port: 3000,
