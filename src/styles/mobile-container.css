@@ -36,8 +36,8 @@ html, body {
   width: var(--viewport-width);
   min-height: var(--viewport-height);
   height: var(--viewport-height);
-  overflow: hidden; /* prevent layout overflow at edges */
-  contain: layout size style paint; /* CSS containment for performance/overflow */
+  overflow: visible; /* allow fixed elements to show */
+  /* contain: layout size style paint; REMOVED to allow fixed positioning context escape */
   /* Let header backgrounds paint edge-to-edge under the status bar */
   /* Top safe-area inset is handled by individual screens as needed */
   /* padding-top: var(--safe-top); */

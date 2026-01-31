@@ -17,11 +17,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "./ui/alert-dialog";
-import { User, Mail, Moon, Sun, LogOut, Shield, FileText, Crown, ChevronRight, Zap, Star } from "lucide-react";
+import { User, Mail, Moon, Sun, LogOut, Shield, FileText, Crown, ChevronRight, Zap, Star, Play } from "lucide-react";
 import { supabase } from '../utils/supabase/client';
 import { toast } from "../utils/tieredToast";
 import { Tier } from "../types/user";
 import logoImage from "../assets/1525789d760b07ee395e05af9b06d7202ebb7883.png";
+import guideThumbnail from "../assets/guide-thumbnail.png";
 import { projectId } from '../utils/supabase/info';
 import { getFunctionUrl } from '../utils/supabase/client';
 import { useTheme } from "./ThemeProvider";
@@ -42,6 +43,7 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
   const [subscription, setSubscription] = useState<{ plan: Tier } | null>(null);
   // Navigation loading state for accessible feedback during redirects
   const [isNavigatingTo, setIsNavigatingTo] = useState<null | 'privacy' | 'terms'>(null);
+  const [isVideoThumbnailLoaded, setIsVideoThumbnailLoaded] = useState(false);
 
   /**
    * Navigation handlers for App Info section
@@ -204,6 +206,51 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
             </CardContent>
           </Card>
         )}
+
+        {/* Tutorial Card */}
+        <Card style={glassCardStyle}>
+          <CardHeader>
+            <CardTitle className="text-base">How to Navigate and Use This App</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-200 dark:bg-gray-800">
+              {!isVideoThumbnailLoaded && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+              )}
+              <img
+                src={guideThumbnail}
+                alt="Tutorial Thumbnail"
+                className={`w-full h-full object-cover transition-opacity duration-300 ${isVideoThumbnailLoaded ? 'opacity-100' : 'opacity-0'}`}
+                onLoad={() => setIsVideoThumbnailLoaded(true)}
+              />
+              <div 
+                className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors group cursor-pointer" 
+                onClick={() => window.open('https://www.youtube.com/watch?v=dQw4w9WgXcQ', '_blank')}
+                role="button"
+                aria-label="Play tutorial video"
+              >
+                <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center pl-1 shadow-lg group-hover:scale-110 transition-transform">
+                   <Play className="w-6 h-6 text-blue-600 fill-blue-600" />
+                </div>
+              </div>
+            </div>
+            <div>
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                    Learn how to create strategies, analyze results, and manage your subscription in this quick tutorial.
+                </p>
+                <Button 
+                    className="w-full" 
+                    variant="outline" 
+                    onClick={() => window.open('https://www.youtube.com/watch?v=dQw4w9WgXcQ', '_blank')}
+                    style={{ borderRadius: '25px' }}
+                >
+                    Watch Tutorial
+                </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Account Settings */}
         <Card style={glassCardStyle}>

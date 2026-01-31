@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { Plus, Clock, CheckCircle2, XCircle, Loader2, Code2, Crown } from "lucide-react";
+import { Button } from "./components/ui/button";
 import { ThemeProvider } from "./components/ThemeProvider";
 import { SplashScreen } from "./components/SplashScreen";
 import { AuthScreen } from "./components/AuthScreen";
@@ -14,6 +16,7 @@ import { SubscriptionScreen } from "./components/SubscriptionScreen";
 import { PrivacyPolicyScreen } from "./components/PrivacyPolicyScreen";
 import { TermsScreen } from "./components/TermsScreen";
 import { BottomNav } from "./components/BottomNav";
+import { HelpBubble } from "./components/HelpBubble";
 import { Toaster } from "./components/ui/sonner";
 import { toast, setToastAccountType } from "./utils/tieredToast";
 import { supabase, getFunctionUrl } from './utils/supabase/client';
@@ -60,6 +63,19 @@ export default function App() {
   }, [effectiveTier]);
 
   useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const u = new URL(window.location.href);
+        if (u.pathname.includes('reset-password')) {
+          const t = u.searchParams.get('token');
+          if (t) setResetToken(t);
+          setRecoveryMode(true);
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
     checkAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
@@ -78,18 +94,21 @@ export default function App() {
             } catch {}
           }
         }
-        // First-login gating: skip auto plan fetch that might default to free
+        // Parallel fetch for better performance and accurate tier gating
+        const [fetchedTier] = await Promise.all([
+          loadSubscription(session.access_token),
+          loadUsage(session.access_token)
+        ]);
+
+        // First-login gating: Only redirect if actually free
         const firstKey = session.user?.id ? `first-login:${session.user.id}` : null;
         const isFirstLogin = firstKey && !window.localStorage.getItem(firstKey);
         if (isFirstLogin) {
           window.localStorage.setItem(firstKey!, '1');
-          setTier('free');
-          setCurrentScreen('subscription');
-          setActiveTab('profile');
-          await loadUsage(session.access_token);
-        } else {
-          await loadSubscription(session.access_token);
-          await loadUsage(session.access_token);
+          if (fetchedTier === 'free') {
+            setCurrentScreen('subscription');
+            setActiveTab('profile');
+          }
         }
       } else if (event === 'SIGNED_OUT') {
         setAccessToken(null);
@@ -131,8 +150,10 @@ export default function App() {
             } catch {}
           }
         }
-        await loadSubscription(session.access_token);
-        await loadUsage(session.access_token);
+        await Promise.all([
+          loadSubscription(session.access_token),
+          loadUsage(session.access_token)
+        ]);
       }
     } catch (error) {
       const msg = String((error as any)?.message || '');
@@ -472,19 +493,10 @@ export default function App() {
           handleNavigate(nextScreen);
         }}
       />
+      <HelpBubble activeTab={activeTab} />
 
       <Toaster />
       </>
     </ThemeProvider>
   );
 }
-    try {
-      if (typeof window !== 'undefined') {
-        const u = new URL(window.location.href);
-        if (u.pathname.includes('reset-password')) {
-          const t = u.searchParams.get('token');
-          if (t) setResetToken(t);
-          setRecoveryMode(true);
-        }
-      }
-    } catch {}

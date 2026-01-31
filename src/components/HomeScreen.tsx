@@ -281,7 +281,7 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
           </Card>
         </div>
       </PullToRefresh>
-      
+
       {showQuotaPopup && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
           <div 

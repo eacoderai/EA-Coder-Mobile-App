@@ -455,7 +455,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
       {/* Content */}
         <div className="app-container flex-1 px-[9px] py-4 safe-nav-pad space-y-8">
         {/* Strategy Description */}
-        <Card style={glassCardStyle} className="mt-4">
+        <Card style={glassCardStyle} className="mt-8 mb-8">
           <CardHeader>
             <CardTitle className="text-base">Strategy Description</CardTitle>
           </CardHeader>
@@ -475,7 +475,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
         </Card>
 
         {strategy.status === 'pending' && (
-          <Card style={glassCardStyle}>
+          <Card style={glassCardStyle} className="mb-8">
             <CardContent className="p-8 text-center">
               <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
               <h3 className="text-lg mb-2 text-gray-900 dark:text-white">Generating Your Code</h3>
@@ -487,7 +487,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
         )}
 
         {strategy.status === 'error' && (
-          <Card style={glassCardStyle}>
+          <Card style={glassCardStyle} className="mb-8">
             <CardContent className="p-6 text-center">
               <AlertCircle className="w-12 h-12 text-red-600 mx-auto mb-4" />
               <h3 className="text-lg mb-2 text-gray-900 dark:text-white">Generation Failed</h3>
@@ -520,7 +520,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
           </Card>
         )}
 
-        <Card style={glassCardStyle}>
+        <Card style={glassCardStyle} className="mb-8">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -551,7 +551,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
         </Card>
 
         {/* Actions */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 mb-8">
           <Button
             variant="outline"
             className="w-full"
@@ -575,7 +575,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
         </div>
 
         {/* Instructions */}
-        <Card style={glassCardStyle}>
+        <Card style={glassCardStyle} className="mb-8">
           <CardHeader>
             <CardTitle className="text-sm">How to Use This Code</CardTitle>
           </CardHeader>
