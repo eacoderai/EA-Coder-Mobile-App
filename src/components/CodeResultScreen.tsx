@@ -453,7 +453,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
       </div>
 
       {/* Content */}
-        <div className="app-container flex-1 px-[9px] py-4 safe-nav-pad space-y-8">
+        <div className="app-container flex-1 px-[9px] py-4 safe-nav-pad space-y-4">
         {/* Strategy Description */}
         <Card style={glassCardStyle} className="mt-4">
           <CardHeader>

@@ -2427,6 +2427,7 @@ api.post('/subscription/webhook', async (c) => {
         }
 
         if (userId) {
+          {
             // Price Check Fallback (Robustness against missing env vars/names)
             if (!purpose && typeof session.amount_total === 'number') {
                const amt = Number(session.amount_total);
@@ -2470,6 +2471,7 @@ api.post('/subscription/webhook', async (c) => {
                 await sendEmailResend(toEmail, `Your EA Coder Plan Activated: ${plan.charAt(0).toUpperCase() + plan.slice(1)}`, html);
               }
             } catch { void 0; }
+          }
         }
         break;
       }

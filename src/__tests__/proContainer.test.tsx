@@ -52,6 +52,10 @@ describe('Pro container containment', () => {
     expect(rows.length).toBeGreaterThan(0);
     const hasWrappedRow = rows.some(r => r.className.includes('flex-wrap'));
     expect(hasWrappedRow).toBe(true);
+    const pill = Array.from(container.querySelectorAll('div')).find(d => (d.getAttribute('aria-label') || '').includes('Coins available:')) as HTMLDivElement | undefined;
+    expect(!!pill).toBe(true);
+    expect(pill!.className).toContain('rounded-full');
+    expect(pill!.className).toContain('shrink-0');
   });
 
   it('does not show overflow indicator initially', async () => {
