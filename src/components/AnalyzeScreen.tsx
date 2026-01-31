@@ -57,6 +57,7 @@ class AnalyzeErrorBoundary extends React.Component<{ children: React.ReactNode }
 }
 
 export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remainingGenerations, onGenerationCount }: AnalyzeScreenProps) {
+  // EA Coder Analysis Screen - v2.0 (Coin system removed)
   const [strategy, setStrategy] = useState<StrategyRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   // subscription state removed in favor of tier prop
