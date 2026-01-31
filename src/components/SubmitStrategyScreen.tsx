@@ -624,12 +624,17 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
 
       // Trigger background analysis immediately (non-blocking) with robust retries/backoff
       try {
-        const analysisPayload = buildBacktestPayload(
-          formData.description,
-          normalizeInstrument(formData.instrument || undefined),
-          startDate,
-          endDate
-        );
+        const txId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        
+        // Construct strategy object for prompt generation
+        const strategyForAnalysis = {
+          ...payload,
+          strategyId: data.strategyId,
+          backtest_period: '3 Years',
+          timeframe: 'H1'
+        };
+
+        const analysisPrompt = buildStrategyAnalysisPrompt(strategyForAnalysis as any);
 
         // localStorage guard to avoid duplicate triggers across screens
         const flagKey = `analysis_started:${data.strategyId}`;
@@ -649,8 +654,20 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: {
-                ...analysisPayload,
-                suppress_notification: true
+                analysis_prompt: analysisPrompt,
+                strategy_context: {
+                  strategy_id: data.strategyId,
+                  strategy_name: payload.strategy_name,
+                  description: payload.description,
+                  risk_management: payload.risk_management,
+                  instrument: payload.instrument,
+                  platform: payload.platform,
+                  backtest_period: '3 Years',
+                  timeframe: 'H1'
+                },
+                attach_prompt: true,
+                suppress_notification: true,
+                tx_id: txId
               },
               accessToken,
               retries: 0,

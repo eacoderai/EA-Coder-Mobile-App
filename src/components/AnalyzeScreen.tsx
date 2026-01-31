@@ -4,7 +4,7 @@ import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
-import { ArrowLeft, TrendingUp, TrendingDown, Activity, DollarSign, Loader2, Crown, Clock, Sparkles, Info, Coins, Lock, X } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Activity, DollarSign, Loader2, Crown, Clock, Sparkles, Info, Lock, X } from "lucide-react";
 import { MAJOR_PAIRS, MULTI_CURRENCY_LABEL } from '../utils/backtestPayload';
 import { projectId } from '../utils/supabase/info';
 import { toast } from "../utils/tieredToast";
@@ -25,11 +25,37 @@ interface AnalyzeScreenProps {
   onGenerationCount: (kind: 'code' | 'analysis') => void;
 }
 
-import { RestrictedBanner } from './RestrictedBanner';
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import { addLocalNotification } from '../utils/notifications';
 import { logSuppressedLimitToast } from '../utils/limits';
 import { NotificationBell } from "./ui/NotificationBell";
+
+class AnalyzeErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: any }>{
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: undefined };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: any, info: any) {
+    console.error('[Analyze] Render error', { error, info });
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600 dark:text-gray-400">Something went wrong rendering analysis.</p>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children as any;
+  }
+}
+
 export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remainingGenerations, onGenerationCount }: AnalyzeScreenProps) {
   const [strategy, setStrategy] = useState<StrategyRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,66 +74,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
   const nextAnalysisTimeoutRef = useRef<number | null>(null);
   const proContainerRef = useRef<HTMLDivElement | null>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
-  const [coins, setCoins] = useState<number>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const stored = window.localStorage.getItem('ea:coins');
-        const n = Number(stored);
-        return isFinite(n) && n >= 0 ? n : 0;
-      }
-    } catch {}
-    return 0;
-  });
-  const [isDeducting, setIsDeducting] = useState(false);
-  const [coinPulse, setCoinPulse] = useState(false);
-  const coinBadgeRef = useRef<HTMLDivElement | null>(null);
-  const lastCoinTxRef = useRef<{ before: number; after: number; at: number } | null>(null);
-  const coinsLockUntilRef = useRef<number>(0);
-  const isCoinOpInFlight = useRef(false);
-  const COIN_COST_REANALYZE = 2;
-  const COINS_STORAGE_KEY = 'ea:coins';
-  const COIN_TX_STORAGE_KEY = 'ea:lastCoinTx';
-  const readStoredCoins = (): number | null => {
-    try {
-      if (typeof window === 'undefined') return null;
-      const raw = window.localStorage.getItem(COINS_STORAGE_KEY);
-      if (!raw) return null;
-      const n = Number(raw);
-      return isFinite(n) && n >= 0 ? n : null;
-    } catch { return null; }
-  };
-  const writeStoredCoins = (value: number) => {
-    try {
-      if (typeof window === 'undefined') return;
-      window.localStorage.removeItem(COINS_STORAGE_KEY);
-      window.localStorage.removeItem(COIN_TX_STORAGE_KEY);
-      window.localStorage.setItem(COINS_STORAGE_KEY, String(Math.max(0, Number(value) || 0)));
-    } catch {}
-  };
-  const readStoredTx = (): { before: number; after: number; at: number } | null => {
-    try {
-      if (typeof window === 'undefined') return null;
-      const raw = window.localStorage.getItem(COIN_TX_STORAGE_KEY);
-      if (!raw) return null;
-      const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== 'object') return null;
-      const before = Number(obj.before);
-      const after = Number(obj.after);
-      const at = Number(obj.at);
-      if (!isFinite(before) || !isFinite(after) || !isFinite(at)) return null;
-      return { before, after, at };
-    } catch { return null; }
-  };
-  const writeStoredTx = (tx: { before: number; after: number; at: number }) => {
-    try {
-      if (typeof window === 'undefined') return;
-      window.localStorage.setItem(COIN_TX_STORAGE_KEY, JSON.stringify({
-        before: Math.max(0, Number(tx.before) || 0),
-        after: Math.max(0, Number(tx.after) || 0),
-        at: Number(tx.at) || Date.now(),
-      }));
-    } catch {}
-  };
+
 
   const formatPercent = (v: unknown): string => {
     if (v === null || v === undefined) return '—';
@@ -174,48 +141,6 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     };
   }, [proContainerRef]);
 
-  const fetchCoins = async () => {
-    if (!accessToken) return;
-    // Prevent overwriting optimistic updates or authoritative server responses
-    if (isCoinOpInFlight.current) return;
-    if (Date.now() < coinsLockUntilRef.current) return;
-    
-    try {
-      const data = await apiFetch<any>(`make-server-00a119be/coins?t=${Date.now()}`, { accessToken, retries: 1 });
-      const n = Number(data?.coins || 0);
-      const safe = isFinite(n) && n >= 0 ? n : 0;
-      setCoins(safe);
-      writeStoredCoins(safe);
-    } catch (_) {}
-  };
-
-  useEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem(COINS_STORAGE_KEY);
-        window.localStorage.removeItem(COIN_TX_STORAGE_KEY);
-        window.localStorage.removeItem('payment_pending');
-      }
-    } catch {}
-    fetchCoins();
-  }, [accessToken]);
-
-  useEffect(() => {
-    const onVis = () => {
-      if (typeof document !== 'undefined' && !document.hidden) {
-        fetchCoins();
-      }
-    };
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', onVis);
-    }
-    return () => {
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('visibilitychange', onVis);
-      }
-    };
-  }, [accessToken]);
-
   // Poll next analysis and auto-run when due (premium only)
   useEffect(() => {
     if (!strategyId || tier === 'free') return;
@@ -271,7 +196,14 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
       strategy?.max_drawdown !== undefined ||
       strategy?.expected_return !== undefined
     );
-    if ((!hasImprovements || !hasMetrics) && !analysisLoading && !processingQueue.current && !autoTriggeredRef.current) {
+
+    // Check if analysis was recently triggered by SubmitStrategyScreen
+    const flagKey = `analysis_started:${strategyId}`;
+    const isPending = (() => {
+      try { return typeof window !== 'undefined' && !!window.localStorage.getItem(flagKey); } catch { return false; }
+    })();
+
+    if ((!hasImprovements || !hasMetrics) && !analysisLoading && !processingQueue.current && !autoTriggeredRef.current && !isPending) {
       autoTriggeredRef.current = true;
       queueAnalysisTask(async () => {
         await triggerReanalysisInternal(false);
@@ -280,6 +212,42 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
       processAnalysisQueue();
     }
   }, [strategy, strategyId, analysisImprovements, analysisLoading]);
+
+  // Polling effect for missing metrics or pending analysis
+  useEffect(() => {
+    if (!strategyId) return;
+
+    const hasMetrics = strategy?.win_rate !== undefined || 
+                       strategy?.profit_factor !== undefined || 
+                       strategy?.max_drawdown !== undefined;
+                       
+    const flagKey = `analysis_started:${strategyId}`;
+    const isPending = (() => {
+        try { return typeof window !== 'undefined' && !!window.localStorage.getItem(flagKey); } catch { return false; }
+    })();
+
+    if (hasMetrics) {
+        // Clear pending flag if we have data
+        try { window.localStorage.removeItem(flagKey); } catch {}
+        return;
+    }
+
+    // If no metrics, poll for updates every 4 seconds
+    const id = setInterval(() => {
+        loadStrategy();
+        fetchLatestAnalysis();
+    }, 4000);
+
+    // Stop polling after 90s (giving ample time for analysis)
+    const timeout = setTimeout(() => {
+        clearInterval(id);
+    }, 90000);
+
+    return () => {
+        clearInterval(id);
+        clearTimeout(timeout);
+    };
+  }, [strategyId, strategy]);
 
   const loadStrategy = async () => {
     try {
@@ -374,89 +342,24 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
       return;
     }
 
-    // Check usage limits for Elite users (though usually unlimited)
-    if (remainingGenerations <= 0) {
-      toast.error('Monthly limit reached — upgrade to Elite for more.', { audience: 'upgrade-to-elite', tag: 'limit_reached' });
-      // We don't return here? Wait, if limit reached, we should return unless it's just a warning.
-      // Logic in SubmitStrategyScreen was strict. Here we probably want to block.
-      // But let's check if remainingGenerations applies to analysis?
-      // App.tsx incrementGeneration(kind) -> analysis runs don't consume generation limit usually?
-      // App.tsx: 
-      // if (kind === 'code') { ... check limit ... }
-      // It seems analysis might not consume the 'generations' limit, or maybe it does?
-      // In App.tsx: incrementGeneration updates usage. 
-      // But TIER_LIMITS says 'generations: 10'. Usually refers to code generation.
-      // Re-analysis might be separate or unlimited for Pro?
-      // Old code: 
-      // if (!hasPremium) { if (remainingGenerations <= 0) { block } }
-      // It implies free users were blocked by generation limit.
-      // But Pro/Elite usually have different limits.
-      // Let's assume for now we check remainingGenerations if it's relevant.
-      // If TIER_LIMITS.pro.generations refers to Strategies Created, does Analysis count?
-      // Usually Analysis is separate. But let's look at how it was.
-      // The old code blocked basic users if remainingGenerations <= 0.
-      // For now, I'll assume Pro users can re-analyze unless blocked by something else.
-      // But wait, the previous code had:
-      // if (!hasPremium) { ... } else { if (remainingGenerations <= 0) logSuppressed... }
-      // This implies Premium users were NOT blocked by remainingGenerations <= 0, just logged.
-      // So Pro/Elite should not be blocked by generation count for analysis.
-      
-      // Let's just log suppressed limit for Pro/Elite if they are at 0, but allow it.
-      // actually, if tier is Pro, and they have 10 generations, maybe they are fine.
-      // Let's stick to the previous behavior: paid users are not blocked by generation count here.
-    }
-    
     if (remainingGenerations <= 0) {
        // Log for analytics
-       logSuppressedLimitToast('AnalyzeScreen.handleTriggerReanalysis', 4, 4, true);
+       logSuppressedLimitToast('AnalyzeScreen.handleTriggerReanalysis', 4, 4, tier);
     }
 
-    if (isDeducting || isReanalyzing) {
-      try { console.log('[Coins] Deduction prevented due to in-flight process'); } catch {}
-      return;
-    }
-    const current = coins;
-    if (current < COIN_COST_REANALYZE) {
-      toast.error('Insufficient coins');
-      try { console.warn('[Coins] Insufficient balance', { current, cost: COIN_COST_REANALYZE }); } catch {}
+    if (isReanalyzing) {
       return;
     }
 
     setIsReanalyzing(true);
-    setIsDeducting(true);
-    isCoinOpInFlight.current = true;
     
-    // Optimistic coin deduction so the span updates immediately
-    try {
-      setCoins((c) => {
-        const next = Math.max(0, Number(c) - COIN_COST_REANALYZE);
-        if (next === 0) {
-          try { toast.error('No coins remaining'); } catch {}
-        }
-        try { console.log('[Coins] Optimistic deduction', { before: Number(c), after: next, cost: COIN_COST_REANALYZE }); } catch {}
-        lastCoinTxRef.current = { before: Number(c), after: next, at: Date.now() };
-        writeStoredCoins(next);
-        writeStoredTx(lastCoinTxRef.current);
-        return next;
-      });
-    } catch {}
     try {
       await triggerReanalysisInternal(true);
-      if (!coinBadgeRef.current) {
-        try { console.warn('[Coins] Coin badge element not found'); } catch {}
-      }
-      setCoinPulse(true);
-      setTimeout(() => setCoinPulse(false), 600);
     } catch (error) {
       console.error('Failed to trigger re-analysis:', error);
       toast.error('Failed to trigger re-analysis');
-      // Do not revert locally; instead re-sync from server for authoritative balance
-      isCoinOpInFlight.current = false;
-      try { await fetchCoins(); } catch {}
     } finally {
       setIsReanalyzing(false);
-      setIsDeducting(false);
-      isCoinOpInFlight.current = false;
     }
   };
 
@@ -464,7 +367,6 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     setAnalysisLoading(true);
     setAnalysisError(null);
     try {
-      const before = Number(coins);
       const txId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const data = await apiFetch<any>(`make-server-00a119be/strategies/${strategyId}/reanalyze`, {
         method: 'POST',
@@ -491,15 +393,6 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
       });
       setNextAnalysis(data.nextAnalysisDate || nextAnalysis || null);
       onGenerationCount('analysis');
-      if (typeof data?.coins === 'number' && isFinite(Number(data.coins))) {
-        const after = Math.max(0, Number(data.coins));
-        lastCoinTxRef.current = { before, after, at: Date.now() };
-        try { console.log('[Coins] Server authoritative balance', { before, after }); } catch {}
-        setCoins(after);
-        coinsLockUntilRef.current = Date.now() + 60000;
-        writeStoredCoins(after);
-        writeStoredTx(lastCoinTxRef.current);
-      }
       if (notifyUI) {
         toast.success('Analysis complete!');
       }
@@ -510,64 +403,9 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     } catch (err: any) {
       setAnalysisError(err?.message || 'Failed to trigger analysis');
       if (notifyUI) toast.error('Failed to trigger re-analysis');
+      autoTriggeredRef.current = false; // Allow retry on failure
     }
     setAnalysisLoading(false);
-  };
-
-  const purchaseCoins = async (amountUsd: number = 5) => {
-    if (!accessToken) {
-      toast.error('Please sign in to purchase coins');
-      return;
-    }
-    try {
-      const amtNum = Math.floor(Number(amountUsd));
-      if (!isFinite(amtNum)) throw new Error('Enter a valid number between 1 and 5');
-      const amt = Math.max(1, Math.min(5, amtNum));
-      const base = (import.meta.env as any).VITE_COINS_PAYMENT_LINK_URL || 'https://buy.stripe.com/test_7sY6oH5wi6tW08m1rubsc03';
-      const parts = accessToken.split('.');
-      let userId: string | null = null;
-      try {
-        if (parts.length >= 2) {
-          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-          userId = payload?.sub ? String(payload.sub) : null;
-        }
-      } catch {}
-      let email: string | null = null;
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        email = (session as any)?.user?.email || null;
-      } catch {}
-      let url = base;
-      try {
-        let token = accessToken;
-        if (!token) {
-          const { data: { session } } = await supabase.auth.getSession();
-          token = session?.access_token || null;
-        }
-        if (token) {
-          const allocUrl = getFunctionUrl('make-server-00a119be/coins/allocate');
-          await fetch(allocUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount_usd: amt }) });
-          
-          // Optimistic update before redirect to prevent reversion on return
-          const newCoins = coins + amt;
-          setCoins(newCoins);
-          writeStoredCoins(newCoins);
-          if (typeof window !== 'undefined') {
-            window.localStorage.setItem('ea:coins_lock', (Date.now() + 60000).toString());
-          }
-
-          const apiUrl = getFunctionUrl('make-server-00a119be/product-info/update');
-          await fetch(apiUrl, { method: 'POST', headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ prod_id: 'prod_TVvcAdglsrNCH0', plan_name: 'coins' }) });
-        }
-      } catch {}
-      const params: string[] = [];
-      if (userId) params.push(`client_reference_id=${encodeURIComponent(userId)}`);
-      if (email) params.push(`prefilled_email=${encodeURIComponent(email)}`);
-      if (params.length > 0) url = `${base}?${params.join('&')}`;
-      window.location.href = url;
-    } catch (e: any) {
-      toast.error(e?.message || 'Failed to open payment link');
-    }
   };
 
   const glassCardStyle: React.CSSProperties = {
@@ -683,7 +521,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
         ) : (
           <>
             {/* Pro Weekly Analysis Banner */}
-            {tier !== 'free' && nextAnalysis && (
+            {tier !== 'free' && (
               <Card className="bg-gradient-to-r from-blue-600 to-purple-600 border-none">
                 <CardContent className="p-4">
                   <div className="flex items-start gap-3">
@@ -752,9 +590,15 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
                       )}
 
                       <div className="flex flex-wrap items-center gap-2 mb-2">
-                        <p className="text-blue-100 text-sm">
-                          Next automated update in {Math.ceil((new Date(nextAnalysis).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} days
-                        </p>
+                        {nextAnalysis ? (
+                          <p className="text-blue-100 text-sm">
+                            Next automated update in {Math.ceil((new Date(nextAnalysis).getTime() - Date.now()) / (1000 * 60 * 60 * 24))} days
+                          </p>
+                        ) : (
+                          <p className="text-blue-100 text-sm">
+                            Analysis ready to start
+                          </p>
+                        )}
                       </div>
                       {tier !== 'free' && nextAnalysis && (
                         <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 flex items-center gap-1 shrink-0 mb-2">
@@ -765,9 +609,9 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
                       <div className="flex flex-wrap items-center gap-2">
                         <Button
                           onClick={handleTriggerReanalysis}
-                          disabled={isReanalyzing || isDeducting || (tier === 'elite' && coins < COIN_COST_REANALYZE)}
-                          aria-disabled={isReanalyzing || isDeducting || (tier === 'elite' && coins < COIN_COST_REANALYZE)}
-                          aria-label={isReanalyzing ? 'Analyzing' : 'Re-analyze Now'}
+                          disabled={isReanalyzing}
+                          aria-disabled={isReanalyzing}
+                          aria-label={isReanalyzing ? 'Analyzing' : (strategy.win_rate ? 'Re-analyze Now' : 'Generate Analysis')}
                           className="bg-white text-blue-600 hover:bg-blue-50 text-sm h-8"
                           style={{ borderRadius: '9999px', paddingLeft: 14, paddingRight: 14 }}
                         >
@@ -779,34 +623,10 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
                           ) : (
                             <>
                               <Sparkles className="w-4 h-4 mr-2" />
-                              Re-analyze Now
+                              {strategy.win_rate ? 'Re-analyze Now' : 'Generate Analysis'}
                             </>
                           )}
                         </Button>
-                        {tier === 'elite' && (
-                          <>
-                            <div
-                              ref={coinBadgeRef}
-                              className="flex items-center gap-2 select-none px-2 py-1 rounded-full bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800/40 transition-colors shrink-0"
-                              aria-live="polite"
-                              aria-label={`Coins available: ${coins}`}
-                            >
-                              <Coins className={`${coinPulse ? 'text-yellow-600 animate-pulse' : 'text-yellow-600 dark:text-yellow-300'} w-5 h-5`} />
-                              <span className={`${coinPulse ? 'text-yellow-600 dark:text-yellow-300' : 'text-gray-900 dark:text-white'} text-base font-medium`}>{coins}</span>
-                            </div>
-                            <Button
-                              onClick={() => purchaseCoins(5)}
-                              aria-label="Get Coins"
-                              variant="ghost"
-                              className="bg-white text-blue-600 hover:bg-blue-50 rounded-full h-12 w-12 leading-tight"
-                            >
-                              <span className="text-[10px] font-medium flex flex-col items-center justify-center">
-                                <span>Get</span>
-                                <span>Coins</span>
-                              </span>
-                            </Button>
-                          </>
-                        )}
                         {/* Badge moved above under header */}
                       </div>
                     </div>
@@ -1138,28 +958,4 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
   );
 }
 
-class AnalyzeErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: any }>{
-  constructor(props: any) {
-    super(props);
-    this.state = { hasError: false, error: undefined };
-  }
-  static getDerivedStateFromError(error: any) {
-    return { hasError: true, error };
-  }
-  componentDidCatch(error: any, info: any) {
-    console.error('[Analyze] Render error', { error, info });
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">Something went wrong rendering analysis.</p>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children as any;
-  }
-}
+

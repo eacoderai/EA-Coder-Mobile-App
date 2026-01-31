@@ -62,8 +62,6 @@ const CLAUDE_MODEL = envGet('CLAUDE_MODEL') || 'claude-3-5-sonnet-20241022';
 const STRIPE_SECRET_KEY = envGet('STRIPE_SECRET_KEY') || '';
 const STRIPE_WEBHOOK_SECRET = envGet('STRIPE_WEBHOOK_SECRET') || '';
 const STRIPE_WEBHOOK_SECRET_SUBSCRIPTION = envGet('STRIPE_WEBHOOK_SECRET_SUBSCRIPTION') || '';
-const STRIPE_PRODUCT_COINS = envGet('STRIPE_PRODUCT_COINS') || 'prod_TVvcAdglsrNCH0';
-const COINS_PAYMENT_LINK_ID = envGet('COINS_PAYMENT_LINK_ID') || 'plink_1SYtnwE6fzafBWqMKL68bFqs';
 const STRIPE_PRODUCT_PRO_MONTHLY = envGet('STRIPE_PRODUCT_PRO_MONTHLY') || '';
 const STRIPE_PRODUCT_PRO_YEARLY = envGet('STRIPE_PRODUCT_PRO_YEARLY') || '';
 const STRIPE_PRODUCT_ELITE_MONTHLY = envGet('STRIPE_PRODUCT_ELITE_MONTHLY') || '';
@@ -82,7 +80,6 @@ try {
 }
 const RESEND_API_KEY = envGet('RESEND_API_KEY') || '';
 const FCM_SERVER_KEY = envGet('FCM_SERVER_KEY') || '';
-const COIN_COST_REANALYZE = Number(envGet('COIN_COST_REANALYZE') || '2');
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -170,16 +167,7 @@ async function hashIdentity(input: string): Promise<string> {
   }
 }
 
-function clampCoinsAmountUsd(amountUsd: number): number {
-  const n = Math.floor(Number(amountUsd));
-  if (!isFinite(n)) return 0;
-  return Math.max(1, Math.min(5, n));
-}
 
-function coinsFromUsd(amountUsd: number): number {
-  const clamped = clampCoinsAmountUsd(amountUsd);
-  return Math.floor(clamped * 10);
-}
 
 function siteUrl() {
   return envGet('SITE_URL') || envGet('PUBLIC_SITE_URL') || envGet('NEXT_PUBLIC_SITE_URL') || '';
@@ -1662,65 +1650,9 @@ api.post('/subscription/select', async (c) => {
   }
 });
 
-api.get('/coins', async (c) => {
-  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
-  if (!user) {
-    return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
-  }
-  try {
-    const key = `coins:${user.id}`;
-    const existing = await kv.get(key);
-    const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-    return c.json({ coins: count });
-  } catch (error: any) {
-    return respondError(c, 500, 'coins_fetch_failed', 'Failed to fetch coins.');
-  }
-});
-      
-api.post('/coins/reconcile', async (c) => {
-  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
-  if (!user) {
-    return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
-  }
-  if (!stripe) {
-    return respondError(c, 500, 'stripe_not_configured', 'Stripe not configured');
-  }
-  try {
-    let userEmail = '';
-    try {
-      const supabase = getSupabaseAdmin();
-      const { data, error } = await supabase.auth.admin.getUserById(user.id);
-      userEmail = error ? '' : String(data?.user?.email || '');
-    } catch { void 0; }
 
-    const events = await stripe.events.list({ type: 'checkout.session.completed', limit: 50 });
-    let credited = 0;
-    for (const ev of (events?.data || [])) {
-      const session = ev.data?.object as any;
-      if (!session) continue;
-      const plink = String(session.payment_link || '');
-      if (COINS_PAYMENT_LINK_ID && plink !== COINS_PAYMENT_LINK_ID) continue;
-      const ref = String(session.client_reference_id || '');
-      const email = String((session.customer_details as any)?.email || (session as any)?.customer_email || '');
-      const matchUser = (ref && ref === String(user.id)) || (userEmail && email && email.toLowerCase() === userEmail.toLowerCase());
-      if (!matchUser) continue;
-      const auditKey = `audit:coins_tx:${user.id}:${ev.id}`;
-      const already = await kv.get(auditKey);
-      if (already) continue;
-      const amountUsd = clampCoinsAmountUsd(Math.round(Number(session.amount_total || 0) / 100));
-      const coinsToAdd = coinsFromUsd(amountUsd);
-      const key = `coins:${user.id}`;
-      const existing = await kv.get(key);
-      const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-      await kv.set(key, { count: count + Math.max(0, coinsToAdd), updated_at: new Date().toISOString() });
-      await kv.set(auditKey, { event: 'reconcile.checkout.completed', sessionId: session.id, createdAt: new Date().toISOString(), amountUsd, coins: Math.max(0, coinsToAdd) });
-      credited += Math.max(0, coinsToAdd);
-    }
-    return c.json({ credited });
-  } catch (error: any) {
-    return respondError(c, 500, 'reconcile_failed', 'Failed to reconcile coins');
-  }
-});
+      
+
 api.post('/free/reconcile', async (c) => {
   const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
   if (!user) {
@@ -1771,23 +1703,7 @@ api.post('/free/reconcile', async (c) => {
   }
 });
 
-api.get('/debug/env/coins', async (c) => {
-  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
-  if (!user) {
-    return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
-  }
-  try {
-    return c.json({
-      stripe_secret_present: !!STRIPE_SECRET_KEY,
-      stripe_webhook_secret_present: !!STRIPE_WEBHOOK_SECRET,
-      stripe_webhook_subscription_secret_present: !!STRIPE_WEBHOOK_SECRET_SUBSCRIPTION,
-      product_coins_id: STRIPE_PRODUCT_COINS,
-      coins_payment_link_id: COINS_PAYMENT_LINK_ID,
-    });
-  } catch (error: any) {
-    return respondError(c, 500, 'env_read_failed', 'Failed to read environment');
-  }
-});
+
 
 api.get('/debug/env/plans', async (c) => {
   const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
@@ -1799,8 +1715,6 @@ api.get('/debug/env/plans', async (c) => {
       stripe_secret_present: !!STRIPE_SECRET_KEY,
       stripe_webhook_secret_present: !!STRIPE_WEBHOOK_SECRET,
       stripe_webhook_subscription_secret_present: !!STRIPE_WEBHOOK_SECRET_SUBSCRIPTION,
-      product_coins_id: STRIPE_PRODUCT_COINS,
-      coins_payment_link_id: COINS_PAYMENT_LINK_ID,
     });
   } catch (error: any) {
     return respondError(c, 500, 'env_read_failed', 'Failed to read environment');
@@ -1892,8 +1806,7 @@ api.get('/webhooks/audit', async (c) => {
     const payments = await kv.getByPrefix('audit:payment_webhook:');
     const updates = await kv.getByPrefix('audit:payment_update:');
     const subs = await kv.getByPrefix('audit:subscription_webhook:');
-    const coins = await kv.getByPrefix('audit:coins_tx:');
-    return c.json({ payments, updates, subscriptions: subs, coins });
+    return c.json({ payments, updates, subscriptions: subs });
   } catch (error: any) {
     return respondError(c, 500, 'audit_fetch_failed', 'Failed to fetch webhook audit');
   }
@@ -1961,7 +1874,7 @@ api.post('/payments/checkout', async (c) => {
   }
   try {
     const body = await c.req.json();
-    const purpose = String(body?.purpose || 'coins');
+    const purpose = String(body?.purpose || 'pro');
     const quantity = Math.max(1, Number(body?.quantity || 1));
     const successPath = String(body?.success_path || '/subscription?status=success');
     const cancelPath = String(body?.cancel_path || '/subscription?status=cancel');
@@ -1971,9 +1884,6 @@ api.post('/payments/checkout', async (c) => {
     if (purpose === 'pro') {
       mode = 'subscription';
       productId = productId || STRIPE_PRODUCT_PRO;
-    } else if (purpose === 'coins') {
-      mode = 'payment';
-      productId = productId || STRIPE_PRODUCT_COINS;
     } else if (purpose === 'free') {
       mode = 'payment';
       productId = productId || STRIPE_PRODUCT_FREE;
@@ -1992,27 +1902,15 @@ api.post('/payments/checkout', async (c) => {
       return respondError(c, 500, 'redirect_unavailable', 'Redirect URLs not configured');
     }
     let session: any;
-    if (purpose === 'free') {
-      session = await stripe.checkout.sessions.create({
-        mode: 'payment',
-        line_items: [{ price: priceId, quantity }],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        client_reference_id: String(user.id),
-        metadata: { user_id: user.id, purpose, coins: '' },
-        customer_email: String((user as any)?.email || ''),
-      });
-    } else {
-      session = await stripe.checkout.sessions.create({
-        mode,
-        line_items: [{ price: priceId, quantity }],
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        client_reference_id: String(user.id),
-        metadata: { user_id: user.id, purpose, coins: purpose === 'coins' ? String(quantity) : '' },
-        customer_email: String((user as any)?.email || ''),
-      });
-    }
+    session = await stripe.checkout.sessions.create({
+      mode,
+      line_items: [{ price: priceId, quantity }],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      client_reference_id: String(user.id),
+      metadata: { user_id: user.id, purpose },
+      customer_email: String((user as any)?.email || ''),
+    });
     await kv.set(`checkout:${user.id}:${session.id}`, { purpose, quantity, created_at: new Date().toISOString() });
     return c.json({ id: session.id, url: String(session.url || '') });
   } catch (error: any) {
@@ -2092,7 +1990,6 @@ api.post('/payments/webhook', async (c) => {
         if (!purpose) {
           const amt = Number(pi.amount || 0);
           if (amt === 0) purpose = 'free';
-          else if (amt >= 100 && amt <= 500) purpose = 'coins';
         }
         if (purpose === 'free') {
           await updatePlanAtomic(String(userId), 'free', 'payment_intent.succeeded', event.id);
@@ -2100,16 +1997,6 @@ api.post('/payments/webhook', async (c) => {
             const supabase = getSupabaseAdmin();
             await (supabase as any).auth.admin.updateUserById(String(userId), { user_metadata: { product_info: { prod_id: STRIPE_PRODUCT_FREE, plan_name: 'free' } } });
           } catch {}
-        } else if (purpose === 'coins') {
-          const usd = clampCoinsAmountUsd(Math.round(Number(pi.amount || 0) / 100));
-          const coinsAdd = coinsFromUsd(usd);
-          const key = `coins:${userId}`;
-          const existing = await kv.get(key);
-          const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-          await kvRetryMSet([
-            [key, { count: count + Math.max(0, coinsAdd), updated_at: new Date().toISOString() }],
-            [`audit:coins_tx:${userId}:${event.id}`, { event: 'payment_intent.succeeded', createdAt: new Date().toISOString(), amountUsd: usd, coins: Math.max(0, coinsAdd), prod_id: STRIPE_PRODUCT_COINS }],
-          ]);
         }
       } else {
         try {
@@ -2128,7 +2015,6 @@ api.post('/payments/webhook', async (c) => {
                 if (!purpose) {
                   const amt = Number(pi.amount || 0);
                   if (amt === 0) purpose = 'free';
-                  else if (amt >= 100 && amt <= 500) purpose = 'coins';
                 }
                 if (purpose === 'free') {
                   await updatePlanAtomic(uid, 'free', 'payment_intent.succeeded', event.id);
@@ -2136,16 +2022,6 @@ api.post('/payments/webhook', async (c) => {
                     const supabase = getSupabaseAdmin();
                     await (supabase as any).auth.admin.updateUserById(uid, { user_metadata: { product_info: { prod_id: STRIPE_PRODUCT_FREE, plan_name: 'free' } } });
                   } catch {}
-                } else if (purpose === 'coins') {
-                  const usd = clampCoinsAmountUsd(Math.round(Number(pi.amount || 0) / 100));
-                  const coinsAdd = coinsFromUsd(usd);
-                  const key = `coins:${uid}`;
-                  const existing = await kv.get(key);
-                  const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-                  await kvRetryMSet([
-                    [key, { count: count + Math.max(0, coinsAdd), updated_at: new Date().toISOString() }],
-                    [`audit:coins_tx:${uid}:${event.id}`, { event: 'payment_intent.succeeded', createdAt: new Date().toISOString(), amountUsd: usd, coins: Math.max(0, coinsAdd), prod_id: STRIPE_PRODUCT_COINS }],
-                  ]);
                 }
               }
             }
@@ -2183,23 +2059,11 @@ api.post('/payments/webhook', async (c) => {
                     const price = await stripe.prices.retrieve(priceId);
                     const productId = typeof price?.product === 'string' ? String(price.product) : ((price?.product as { id?: string })?.id || null);
                     if (productId === STRIPE_PRODUCT_FREE) purpose = 'free';
-                    else if (productId === STRIPE_PRODUCT_COINS) purpose = 'coins';
                   }
                 } catch { void 0; }
-                if (!purpose && COINS_PAYMENT_LINK_ID && String(((foundSession as unknown) as { payment_link?: string })?.payment_link || '') === COINS_PAYMENT_LINK_ID) purpose = 'coins';
               }
               if (uid && purpose === 'free') {
                 await updatePlanAtomic(String(uid), 'free', 'pi_linked_session', event.id);
-              } else if (uid && purpose === 'coins') {
-                const usd = clampCoinsAmountUsd(Math.round(Number(pi.amount || 0) / 100));
-                const add = coinsFromUsd(usd);
-                const key = `coins:${uid}`;
-                const existing = await kv.get(key);
-                const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-                await kvRetryMSet([
-                  [key, { count: count + Math.max(0, add), updated_at: new Date().toISOString() }],
-                  [`audit:coins_tx:${uid}:${event.id}`, { event: 'pi_linked_session', createdAt: new Date().toISOString(), amountUsd: usd, coins: Math.max(0, add), prod_id: STRIPE_PRODUCT_COINS }],
-                ]);
               }
             }
           } catch { void 0; }
@@ -2245,7 +2109,6 @@ api.post('/payments/webhook', async (c) => {
               }
               if (foundSession) {
                 const pl = String(((foundSession as unknown) as { payment_link?: string })?.payment_link || '');
-                if (!purpose && COINS_PAYMENT_LINK_ID && pl === COINS_PAYMENT_LINK_ID) purpose = 'coins';
                 if (!purpose) {
                   const items = await stripe.checkout.sessions.listLineItems(foundSession.id, { limit: 10 });
                   const first = Array.isArray(items?.data) ? items.data[0] : null;
@@ -2254,7 +2117,6 @@ api.post('/payments/webhook', async (c) => {
                     const price = await stripe.prices.retrieve(priceId);
                     const productId = typeof price?.product === 'string' ? String(price.product) : ((price?.product as { id?: string })?.id || null);
                     if (productId === STRIPE_PRODUCT_FREE) purpose = 'free';
-                    else if (productId === STRIPE_PRODUCT_COINS) purpose = 'coins';
                     else if (productId === STRIPE_PRODUCT_ELITE || productId === STRIPE_PRODUCT_ELITE_MONTHLY || productId === STRIPE_PRODUCT_ELITE_YEARLY) purpose = 'elite';
                     else if (productId === STRIPE_PRODUCT_PRO || productId === STRIPE_PRODUCT_PRO_MONTHLY || productId === STRIPE_PRODUCT_PRO_YEARLY) purpose = 'pro';
                   }
@@ -2262,18 +2124,7 @@ api.post('/payments/webhook', async (c) => {
               }
             } catch { void 0; }
           }
-          if (purpose === 'coins') {
-            const coinsMeta = Number(String((md as Record<string, unknown>)?.coins || '0')) || 0;
-            let coinsAdd = coinsMeta;
-            if (coinsAdd <= 0) {
-              const amountUsd = clampCoinsAmountUsd(Math.round(Number(ch.amount || 0) / 100));
-              coinsAdd = coinsFromUsd(amountUsd);
-            }
-            const key = `coins:${userId}`;
-            const existing = await kv.get(key);
-            const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-            await kv.set(key, { count: count + Math.max(0, coinsAdd), updated_at: new Date().toISOString() });
-          } else if (purpose === 'free' || purpose === 'pro' || purpose === 'elite') {
+          if (purpose === 'free' || purpose === 'pro' || purpose === 'elite') {
             await updatePlanAtomic(String(userId), purpose, 'charge.succeeded', event.id);
             if (purpose !== 'free') {
                 try {
@@ -2328,8 +2179,6 @@ api.post('/payments/webhook', async (c) => {
                    purpose = 'elite';
                  } else if (productId === STRIPE_PRODUCT_PRO || productId === STRIPE_PRODUCT_PRO_MONTHLY || productId === STRIPE_PRODUCT_PRO_YEARLY) {
                    purpose = 'pro';
-                 } else if (productId === STRIPE_PRODUCT_COINS) {
-                   purpose = 'coins';
                  }
               }
 
@@ -2339,15 +2188,11 @@ api.post('/payments/webhook', async (c) => {
                   const product = await stripe.products.retrieve(productId);
                   const name = String(product?.name || '').toLowerCase();
                   if (name.includes('elite')) purpose = 'elite';
-                  else if (name.includes('coin')) purpose = 'coins';
                   else if (name.includes('pro') || name.includes('premium')) purpose = 'pro';
                 } catch { void 0; }
               }
             }
           } catch { void 0; }
-        }
-        if (!purpose && COINS_PAYMENT_LINK_ID && String(((session as unknown) as { payment_link?: string })?.payment_link || '') === COINS_PAYMENT_LINK_ID) {
-          purpose = 'coins';
         }
         // Priority 2: Amount Match (Fallback if Product ID/Name failed)
         if (!purpose && typeof session.amount_total === 'number') {
@@ -2357,29 +2202,7 @@ api.post('/payments/webhook', async (c) => {
         }
         
         if (userId) {
-          if (purpose === 'coins') {
-            const meta = (session.metadata || {}) as Record<string, unknown>;
-            let coinsToAdd = Number(String(meta?.coins || '0')) || 0;
-            if (coinsToAdd <= 0) {
-              const amountUsd = clampCoinsAmountUsd(Math.round(Number(session.amount_total || 0) / 100));
-              coinsToAdd = coinsFromUsd(amountUsd);
-            }
-            if (coinsToAdd <= 0) {
-              try {
-                const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 10 });
-                const qty = Array.isArray(items?.data) ? items.data.reduce((acc: number, li: unknown) => acc + Number((li as { quantity?: number }).quantity || 0), 0) : 0;
-                if (qty > 0) coinsToAdd = qty;
-              } catch { void 0; }
-            }
-            const key = `coins:${userId}`;
-            const existing = await kv.get(key);
-            const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-            const amountUsd = clampCoinsAmountUsd(Math.round(Number(session.amount_total || 0) / 100));
-            await kvRetryMSet([
-              [key, { count: count + Math.max(0, coinsToAdd), updated_at: new Date().toISOString() }],
-              [`audit:coins_tx:${userId}:${event.id}`, { event: 'payments.checkout.completed', createdAt: new Date().toISOString(), amountUsd, coins: Math.max(0, coinsToAdd), prod_id: STRIPE_PRODUCT_COINS }],
-            ]);
-          } else if (purpose === 'pro' || purpose === 'elite') {
+          if (purpose === 'pro' || purpose === 'elite') {
             await updatePlanAtomic(String(userId), purpose, 'checkout.session.completed', event.id);
             // Send welcome notification
             const notificationId = crypto.randomUUID();
@@ -2417,7 +2240,7 @@ api.post('/payments/webhook/simulate', async (c) => {
     return respondError(c, 401, 'unauthorized', 'Unauthorized');
   }
   try {
-    const { type, user_id, purpose, amount, coins } = await c.req.json();
+    const { type, user_id, purpose, amount } = await c.req.json();
     const eventId = `sim_${crypto.randomUUID()}`;
     const startedAt = new Date().toISOString();
     await kvRetrySet(`audit:payment_webhook:${eventId}`, { type, createdAt: startedAt, startedAt });
@@ -2430,15 +2253,6 @@ api.post('/payments/webhook/simulate', async (c) => {
       await kvRetrySet(`payment:${uid}:${eventId}`, { status: 'succeeded', amount: amt, currency: 'usd', created_at: new Date().toISOString(), purpose: String(purpose || '') });
       if (String(purpose || '') === 'free') {
         await updatePlanAtomic(uid, 'free', 'simulate', eventId);
-      } else if (String(purpose || '') === 'coins') {
-        const key = `coins:${uid}`;
-        const existing = await kv.get(key);
-        const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-        const add = typeof coins === 'number' && coins > 0 ? coins : coinsFromUsd(clampCoinsAmountUsd(Math.round(amt / 100)));
-        await kvRetryMSet([
-          [key, { count: count + Math.max(0, add), updated_at: new Date().toISOString() }],
-          [`audit:coins_tx:${uid}:${eventId}`, { event: 'simulate', createdAt: new Date().toISOString(), amountUsd: Math.round(amt / 100), coins: Math.max(0, add), prod_id: STRIPE_PRODUCT_COINS }],
-        ]);
       }
     } else if (type === 'checkout.session.completed') {
       const uid = String(user_id || (user ? user.id : ''));
@@ -2447,16 +2261,6 @@ api.post('/payments/webhook/simulate', async (c) => {
       }
       if (String(purpose || '') === 'pro') {
         await updatePlanAtomic(uid, 'pro', 'simulate.checkout.completed', eventId);
-      } else if (String(purpose || '') === 'coins') {
-        const amt = Number(amount || 100);
-        const add = typeof coins === 'number' && coins > 0 ? coins : coinsFromUsd(clampCoinsAmountUsd(Math.round(amt / 100)));
-        const key = `coins:${uid}`;
-        const existing = await kv.get(key);
-        const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-        await kvRetryMSet([
-          [key, { count: count + Math.max(0, add), updated_at: new Date().toISOString() }],
-          [`audit:${uid}:${eventId}`, { event: 'payments.checkout.completed', createdAt: new Date().toISOString(), coins: Math.max(0, add), status: 'completed' }],
-        ]);
       }
     }
     await kvRetrySet(`webhook:processed:${eventId}`, { id: eventId, at: new Date().toISOString() });
@@ -2563,12 +2367,10 @@ api.post('/subscription/webhook', async (c) => {
                 purpose = 'elite';
             } else if (productId === STRIPE_PRODUCT_PRO || productId === STRIPE_PRODUCT_PRO_MONTHLY || productId === STRIPE_PRODUCT_PRO_YEARLY) {
                 purpose = 'pro';
-            } else if (productId === STRIPE_PRODUCT_COINS) {
-                purpose = 'coins';
             }
         }
 
-        const isKnownPlan = purpose === 'elite' || purpose === 'pro' || purpose === 'coins';
+        const isKnownPlan = purpose === 'elite' || purpose === 'pro';
 
         // Priority 2: Amount Match (Safety Override)
         // Only run if we haven't confirmed a known plan via Product ID, OR if we want to double check against potential mislabeling
@@ -2625,20 +2427,6 @@ api.post('/subscription/webhook', async (c) => {
         }
 
         if (userId) {
-          if (purpose === 'coins') {
-            const meta = (session.metadata || {}) as Record<string, unknown>;
-            let coinsToAdd = Number(String(meta?.coins || '0')) || 0;
-            try {
-              const items = await stripe.checkout.sessions.listLineItems(session.id, { limit: 10 });
-              const qty = Array.isArray(items?.data) ? items.data.reduce((acc: number, li: unknown) => acc + Number((li as { quantity?: number }).quantity || 0), 0) : 0;
-              if (coinsToAdd <= 0 && qty > 0) coinsToAdd = qty;
-            } catch { void 0; }
-            const key = `coins:${userId}`;
-            const existing = await kv.get(key);
-            const count = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-            await kv.set(key, { count: count + Math.max(0, coinsToAdd), updated_at: new Date().toISOString() });
-            await kv.set(`audit:${userId}:${event.id}`, { event: 'coins.purchased', sessionId: session.id, createdAt: new Date().toISOString(), coins: Math.max(0, coinsToAdd), status: 'completed' });
-          } else {
             // Price Check Fallback (Robustness against missing env vars/names)
             if (!purpose && typeof session.amount_total === 'number') {
                const amt = Number(session.amount_total);
@@ -2682,7 +2470,6 @@ api.post('/subscription/webhook', async (c) => {
                 await sendEmailResend(toEmail, `Your EA Coder Plan Activated: ${plan.charAt(0).toUpperCase() + plan.slice(1)}`, html);
               }
             } catch { void 0; }
-          }
         }
         break;
       }
@@ -2890,27 +2677,7 @@ api.post('/strategies/:id/reanalyze', async (c) => {
 
     const suppress_notification = querySuppress || bodySuppress || isNew || isPending;
 
-    try {
-      const coinKey = `coins:${user.id}`;
-      const existing = await kv.get(coinKey);
-      const current = typeof existing?.count === 'number' ? existing.count : Number(existing) || 0;
-      if (current < COIN_COST_REANALYZE) {
-        return respondError(c, 403, 'insufficient_coins', 'Insufficient coins to re-analyze', { required: COIN_COST_REANALYZE, available: current, redirect: '/subscription' });
-      }
-      const after = Math.max(0, current - COIN_COST_REANALYZE);
-      await kv.set(coinKey, { count: after, updated_at: new Date().toISOString() });
-      const auditId = crypto.randomUUID();
-      await kv.set(`audit:coins_tx:${user.id}:${auditId}`, {
-        event: 'coins.deduct.reanalyze',
-        createdAt: new Date().toISOString(),
-        coins: COIN_COST_REANALYZE,
-        before: current,
-        after,
-        strategy_id: strategyId
-      });
-    } catch (_) {
-      return respondError(c, 500, 'coins_deduction_failed', 'Failed to deduct coins');
-    }
+
     
     // Generate AI-powered analysis metrics and improvements
     let improvements: string[];

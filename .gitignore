@@ -13,3 +13,6 @@ build
 
 # Ignore macOS metadata files
 ._*
+
+# Ignore large binary files
+docker.dmg
