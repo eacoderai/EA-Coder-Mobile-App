@@ -1,0 +1,83 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e5]:
+  - generic [ref=e7]:
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - img "EA Coder" [ref=e13]
+          - generic [ref=e14]:
+            - heading "EA Coder" [level=1] [ref=e15]
+            - paragraph [ref=e16]: Your AI Trading Assistant
+        - button "Open notifications" [ref=e17] [cursor=pointer]:
+          - img [ref=e18]
+      - generic "Strategy Creation Progress" [ref=e22]:
+        - generic [ref=e24]:
+          - generic [ref=e25]:
+            - heading "Strategy Creation Limit." [level=4] [ref=e26]
+            - button "Strategy limit info" [ref=e27] [cursor=pointer]:
+              - img [ref=e28]
+          - generic [ref=e31]: Pro Plan
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - generic [ref=e34]:
+              - text: "Created:"
+              - generic [ref=e35]: 0 of 10
+            - generic [ref=e36]: "Remaining: 10"
+          - progressbar [ref=e37]
+          - generic [ref=e38]:
+            - generic [ref=e39]: 0 of 10 strategies created
+            - generic [ref=e40]: "Monthly Limit: 10"
+          - button "Upgrade to Elite" [ref=e42] [cursor=pointer]:
+            - img
+            - text: Upgrade to Elite
+      - button "Create New Strategy" [ref=e43] [cursor=pointer]:
+        - img
+        - text: Create New Strategy
+    - generic [ref=e44]:
+      - generic:
+        - generic:
+          - img
+      - generic [ref=e45]:
+        - generic [ref=e46]:
+          - heading "Recent Strategies" [level=2] [ref=e47]
+          - paragraph [ref=e48]: Your generated Expert Advisors and trading bots
+        - generic [ref=e50]:
+          - img "EA Coder" [ref=e52]
+          - heading "No strategies yet" [level=3] [ref=e53]
+          - paragraph [ref=e54]: Create your first Expert Advisor using plain English
+          - button "Submit Strategy" [ref=e55] [cursor=pointer]:
+            - img
+            - text: Submit Strategy
+        - generic [ref=e56]:
+          - generic [ref=e58]:
+            - paragraph [ref=e59]: "0"
+            - paragraph [ref=e60]: Total
+          - generic [ref=e62]:
+            - paragraph [ref=e63]: "0"
+            - paragraph [ref=e64]: Generated
+          - generic [ref=e66]:
+            - paragraph [ref=e67]: "0"
+            - paragraph [ref=e68]: Pending
+  - navigation "Main navigation" [ref=e70]:
+    - generic [ref=e71]:
+      - button "Home" [ref=e72] [cursor=pointer]:
+        - img [ref=e75]
+        - generic [ref=e78]: Home
+      - button "Analyze" [ref=e79] [cursor=pointer]:
+        - img [ref=e81]
+        - generic [ref=e83]: Analyze
+      - button "Chat" [ref=e84] [cursor=pointer]:
+        - img [ref=e86]
+        - generic [ref=e88]: Chat
+      - button "Convert" [ref=e89] [cursor=pointer]:
+        - img [ref=e91]
+        - generic [ref=e96]: Convert
+      - button "Profile" [ref=e97] [cursor=pointer]:
+        - img [ref=e99]
+        - generic [ref=e102]: Profile
+  - button "Open Help Center" [ref=e104] [cursor=pointer]:
+    - img
+  - region "Notifications alt+T"
+```

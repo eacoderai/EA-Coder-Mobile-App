@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { createPortal } from "react-dom";
 import { MessageCircleQuestion, Search, Play, Mail, HelpCircle, X, ChevronRight, MessageSquare, FileText, Send, ExternalLink } from "lucide-react";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from "./ui/dialog";
@@ -109,28 +108,28 @@ export const HelpBubble: React.FC<HelpBubbleProps> = ({ className, activeTab = "
 
   return (
     <>
-      {createPortal(
-        <div 
-          className="fixed z-[9999] flex items-center justify-center"
-          style={{ 
-            bottom: 'calc(4rem + 12px + env(safe-area-inset-bottom, 0px))',
-            right: '1rem'
-          }}
+      <div 
+        className="fixed z-[9999] flex items-center justify-center"
+        style={{ 
+          bottom: 'calc(4rem + 12px + env(safe-area-inset-bottom, 0px))',
+          right: '1rem'
+        }}
+      >
+        <Button
+          type="button"
+          className="rounded-full w-14 h-14 shadow-xl bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer flex items-center justify-center pointer-events-auto"
+          aria-label="Open Help Center"
+          onClick={handleOpen}
         >
-          <Button
-            type="button"
-            className="rounded-full w-14 h-14 shadow-xl bg-blue-600 hover:bg-blue-700 text-white transition-all duration-300 hover:scale-110 active:scale-95 cursor-pointer flex items-center justify-center pointer-events-auto"
-            aria-label="Open Help Center"
-            onClick={handleOpen}
-          >
-            <MessageCircleQuestion className="w-7 h-7" />
-          </Button>
-        </div>,
-        document.body
-      )}
+          <MessageCircleQuestion className="w-7 h-7" />
+        </Button>
+      </div>
 
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent className="max-w-md w-full h-[85vh] max-h-[800px] flex flex-col p-0 gap-0 overflow-hidden rounded-3xl border border-border/50 shadow-2xl [&>button]:hidden bg-white dark:bg-zinc-950 z-[100]">
+        <DialogContent 
+          className="max-w-md w-full h-[85vh] max-h-[800px] flex flex-col p-0 gap-0 overflow-hidden rounded-3xl border border-border/50 shadow-2xl bg-white dark:bg-zinc-950"
+          hideCloseButton
+        >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border/40 shrink-0 bg-white/50 dark:bg-zinc-950/50 backdrop-blur-md">
             <DialogTitle className="text-xl font-bold tracking-tight flex items-center gap-2.5">

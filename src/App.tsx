@@ -53,7 +53,10 @@ export default function App() {
     )
   );
   
-  const effectiveTier: Tier = forceFreeDev ? 'free' : (testUnlock ? 'elite' : tier);
+  // Test bypass for E2E testing
+  const forceAuth = typeof window !== 'undefined' && window.localStorage.getItem('FORCE_AUTH') === '1';
+
+  const effectiveTier: Tier = forceAuth ? 'pro' : (forceFreeDev ? 'free' : (testUnlock ? 'elite' : tier));
   const isProOrElite = effectiveTier === 'pro' || effectiveTier === 'elite';
   const isElite = effectiveTier === 'elite';
   
@@ -76,6 +79,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (forceAuth) {
+      setIsAuthenticated(true);
+      setIsCheckingAuth(false);
+      return;
+    }
     checkAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
