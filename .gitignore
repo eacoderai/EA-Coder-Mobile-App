@@ -16,3 +16,9 @@ build
 
 # Ignore large binary files
 docker.dmg
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+

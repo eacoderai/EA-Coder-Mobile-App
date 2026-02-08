@@ -20,7 +20,7 @@ function getDeno(): { env: { get(key: string): string | undefined } } {
 
 export function siteUrl(): string {
   const deno = getDeno();
-  return deno.env.get('SITE_URL') || deno.env.get('PUBLIC_SITE_URL') || deno.env.get('NEXT_PUBLIC_SITE_URL') || '';
+  return deno.env.get('SITE_URL') || deno.env.get('PUBLIC_SITE_URL') || deno.env.get('NEXT_PUBLIC_SITE_URL') || 'https://eacoderai.xyz';
 }
 
 export function safeRedirectUrl(path: string): string {
@@ -49,18 +49,22 @@ export async function hashIdentity(input: string): Promise<string> {
 
 export async function sendEmailResend(to: string, subject: string, html: string): Promise<boolean> {
   const deno = getDeno();
-  const RESEND_API_KEY = deno.env.get('RESEND_API_KEY') || '';
+  const RESEND_API_KEY = deno.env.get('RESEND_API_KEY') || 're_EARmsb9E_5YCbQQeuH6MrnAzScZQTm47y';
   if (!RESEND_API_KEY) return false;
   try {
-    const spec = 're' + 'send';
-    const mod: any = await import(spec);
-    const Resend = mod.Resend;
+    const { Resend } = await import('npm:resend@^3.3.0');
     const resend = new Resend(RESEND_API_KEY);
+    
     let attempt = 0;
     const max = 3;
     let lastErr: any = null;
     while (attempt < max) {
-      const { error } = await resend.emails.send({ from: 'EA Coder <no-reply@eacoder.app>', to: [to], subject, html });
+      const { error } = await resend.emails.send({ 
+        from: 'EA Coder <onboarding@resend.dev>', 
+        to: [to], 
+        subject, 
+        html 
+      });
       if (!error) return true;
       lastErr = error;
       await new Promise((r) => setTimeout(r, 250 * Math.pow(2, attempt)));

@@ -8,6 +8,7 @@ export interface StrategyCreateRequest {
   platform: string;
   indicators?: string[];
   indicator_mode?: 'single' | 'multiple';
+  strategy_type: 'automated' | 'manual';
 }
 
 export interface StrategyCreateResponse {
@@ -42,21 +43,22 @@ export interface AnalysisMetrics {
 }
 
 export interface StrategyRecord {
-  id?: string;
-  strategy_name?: string;
-  description?: string;
+  id: string;
+  user_id: string;
+  strategy_name: string;
+  description: string;
+  risk_management?: string;
   instrument?: string;
-  platform?: string;
-  // Store the user-selected instrument for analysis UI (may be multi-currency label)
-  analysis_instrument?: string;
+  platform: string;
   indicators?: string[];
   indicator_mode?: 'single' | 'multiple';
-  analysis?: {
-    metrics?: AnalysisMetrics;
-    improvements?: string[];
-    backtest?: BacktestResults; // Optional backtest payload when available
-  };
+  status: 'pending' | 'processing' | 'generated' | 'failed';
+  code?: string; // Legacy field
   generated_code?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
+  strategy_type: 'automated' | 'manual';
 }
 
 export interface CodeVersion {

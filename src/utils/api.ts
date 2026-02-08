@@ -68,6 +68,7 @@ export async function apiFetch<T = any>(
         if (parsed && typeof parsed.redirect === 'string') error.redirect = parsed.redirect;
         if (parsed && typeof parsed.limit === 'number') error.limit = parsed.limit;
         if (parsed && typeof parsed.used === 'number') error.used = parsed.used;
+        if (parsed && Array.isArray(parsed.errors)) error.errors = parsed.errors;
 
         // Only show toasts on the final attempt
         const shouldToast = toastMode !== 'never' && (toastMode === 'always' || attempt >= retries);

@@ -17,6 +17,7 @@ import { PrivacyPolicyScreen } from "./components/PrivacyPolicyScreen";
 import { TermsScreen } from "./components/TermsScreen";
 import { BottomNav } from "./components/BottomNav";
 import { HelpBubble } from "./components/HelpBubble";
+import { HelpCenterScreen } from "./components/HelpCenterScreen";
 import { Toaster } from "./components/ui/sonner";
 import { toast, setToastAccountType } from "./utils/tieredToast";
 import { supabase, getFunctionUrl } from './utils/supabase/client';
@@ -414,6 +415,7 @@ export default function App() {
             tier={effectiveTier}
             remainingGenerations={remainingGenerations}
             onGenerationCount={incrementGeneration}
+            initialStrategyId={selectedStrategyId || undefined}
           />
         )}
         {currentScreen === "code" && selectedStrategyId && (
@@ -484,6 +486,12 @@ export default function App() {
             }}
           />
         )}
+        {currentScreen === "help-center" && (
+          <HelpCenterScreen
+            onNavigate={handleNavigate}
+            activeTab={activeTab}
+          />
+        )}
       </div>
 
       <BottomNav
@@ -501,7 +509,7 @@ export default function App() {
           handleNavigate(nextScreen);
         }}
       />
-      <HelpBubble activeTab={activeTab} />
+      <HelpBubble activeTab={activeTab} onNavigate={handleNavigate} />
 
       <Toaster />
       </>

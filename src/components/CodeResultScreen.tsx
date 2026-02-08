@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { ArrowLeft, Copy, Download, MessageSquare, CheckCircle2, Loader2, AlertCircle, RefreshCw, BarChart3 } from "lucide-react";
+import { ArrowLeft, Copy, Download, MessageSquare, CheckCircle2, Loader2, AlertCircle, RefreshCw, BarChart3, Lock } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { projectId } from '../utils/supabase/info';
 import { toast } from "../utils/tieredToast";
+import { trackEvent } from "../utils/analytics";
 import { getFunctionUrl } from '../utils/supabase/client';
  
 
@@ -263,6 +264,64 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
     URL.revokeObjectURL(url);
     
     toast.success(`Downloaded ${filename}`);
+  };
+
+  const isManual = strategy?.strategy_type === 'manual';
+
+  useEffect(() => {
+    if (strategy?.status === 'generated' && isManual) {
+       const trackKey = `tracked_manual_${strategy.id}`;
+       if (!readLocal(trackKey)) {
+         trackEvent('manual_plan_generated', { strategyId: strategy.id });
+         if (typeof window !== 'undefined') window.localStorage.setItem(trackKey, 'true');
+       }
+    }
+  }, [strategy?.status, isManual, strategy?.id]);
+
+  const handleAutomate = () => {
+    if (!isProUser) {
+      onNavigate('subscription');
+      return;
+    }
+    onNavigate('submit', strategyId);
+  };
+
+  const renderManualPlan = (text: string) => {
+    if (!text) return <p className="text-sm text-gray-500">No plan generated.</p>;
+    
+    // Simple parser for bold headers and bullets
+    return text.split('\n').map((line, i) => {
+      const trimmed = line.trim();
+      if (!trimmed) return <div key={i} className="h-2" />;
+      
+      // Headers (bold lines)
+      if (trimmed.startsWith('**') || (trimmed.includes('**') && !trimmed.startsWith('-'))) {
+        const content = trimmed.replace(/\*\*/g, '');
+        return (
+          <h3 key={i} className="font-bold text-lg mt-4 mb-2 text-gray-900 dark:text-white">
+            {content}
+          </h3>
+        );
+      }
+      
+      // Bullet points
+      if (trimmed.startsWith('- ')) {
+        const content = trimmed.substring(2);
+        const parts = content.split('**');
+        return (
+          <div key={i} className="flex items-start gap-2 mb-2 ml-1">
+            <div className="min-w-[6px] h-[6px] rounded-full bg-blue-500 mt-2" />
+            <p className="text-sm text-gray-700 dark:text-gray-300 flex-1">
+              {parts.map((part, idx) => 
+                idx % 2 === 1 ? <span key={idx} className="font-semibold text-gray-900 dark:text-gray-100">{part}</span> : part
+              )}
+            </p>
+          </div>
+        );
+      }
+      
+      return <p key={i} className="text-sm text-gray-700 dark:text-gray-300 mb-2">{trimmed}</p>;
+    });
   };
 
   const retryGeneration = async () => {
@@ -524,76 +583,111 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-base">Generated Code</CardTitle>
+                <CardTitle className="text-base">{isManual ? 'Trading Plan' : 'Generated Code'}</CardTitle>
                 <CardDescription>
-                  {strategy.status === 'pending' || strategy.status === 'generating' ? 'Generating code...' : `Production-ready ${strategy.platform.toUpperCase()} code`}
+                  {strategy.status === 'pending' || strategy.status === 'generating' 
+                    ? (isManual ? 'Creating your plan...' : 'Generating code...') 
+                    : (isManual ? 'Structured Manual Trading Plan' : `Production-ready ${strategy.platform.toUpperCase()} code`)}
                 </CardDescription>
               </div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" onClick={copyCode} disabled={strategy.status === 'pending' || strategy.status === 'generating'}>
                   <Copy className="w-4 h-4" />
+                  <span className="ml-2 hidden sm:inline">{isManual ? 'Copy Plan' : 'Copy Code'}</span>
                 </Button>
-                <Button size="sm" variant="outline" onClick={downloadCode} disabled={strategy.status === 'pending' || strategy.status === 'generating'}>
-                  <Download className="w-4 h-4" />
-                </Button>
+                {!isManual && (
+                  <Button size="sm" variant="outline" onClick={downloadCode} disabled={strategy.status === 'pending' || strategy.status === 'generating'}>
+                    <Download className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <ScrollArea className={`${codeBoxHeights} w-full rounded-md border border-gray-200 dark:border-gray-700`}>
-              <pre className="p-4 text-xs max-w-full overflow-x-auto">
-                <code className="text-gray-800 dark:text-gray-200 whitespace-pre">
-                  {codeText}
-                </code>
-              </pre>
+            <ScrollArea className={`${isManual ? 'h-[500px]' : codeBoxHeights} w-full rounded-md border border-gray-200 dark:border-gray-700 ${isManual ? 'bg-white/50 dark:bg-black/20 p-4' : ''}`}>
+              {isManual ? (
+                <div className="prose dark:prose-invert max-w-none">
+                  {renderManualPlan(codeText)}
+                </div>
+              ) : (
+                <pre className="p-4 text-xs max-w-full overflow-x-auto">
+                  <code className="text-gray-800 dark:text-gray-200 whitespace-pre">
+                    {codeText}
+                  </code>
+                </pre>
+              )}
             </ScrollArea>
           </CardContent>
         </Card>
 
         {/* Actions */}
         <div className="grid grid-cols-2 gap-3 mb-8">
-          <Button
-            variant="outline"
-            className="w-full"
-            style={{ width: 'calc(100% - 8px)' }}
-            onClick={() => onNavigate('chat', strategyId)}
-            disabled={strategy.status === 'pending' || strategy.status === 'generating'}
-          >
-            <MessageSquare className="w-4 h-4 mr-2" />
-            Refine Code
-          </Button>
-          <Button
-            variant="outline"
-            className="w-full"
-            style={{ width: 'calc(100% - 8px)' }}
-            onClick={() => onNavigate('analyze', strategyId)}
-            disabled={strategy.status === 'pending' || strategy.status === 'generating'}
-          >
-            <BarChart3 className="w-4 h-4 mr-2" />
-            View Analysis
-          </Button>
+          {isManual ? (
+            <Button
+              variant="default"
+              className="col-span-2 w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg"
+              style={{ width: 'calc(100% - 8px)' }}
+              onClick={handleAutomate}
+              disabled={strategy.status === 'pending' || strategy.status === 'generating'}
+            >
+              {!isProUser && <Lock className="w-4 h-4 mr-2 opacity-80" />}
+              {isProUser ? 'Automate This Strategy' : 'Automate This Strategy (Pro)'}
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                className="w-full"
+                style={{ width: 'calc(100% - 8px)' }}
+                onClick={() => onNavigate('chat', strategyId)}
+                disabled={strategy.status === 'pending' || strategy.status === 'generating'}
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Refine Code
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                style={{ width: 'calc(100% - 8px)' }}
+                onClick={() => onNavigate('analyze', strategyId)}
+                disabled={strategy.status === 'pending' || strategy.status === 'generating'}
+              >
+                <BarChart3 className="w-4 h-4 mr-2" />
+                View Analysis
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Instructions */}
         <Card style={glassCardStyle} className="mb-8">
           <CardHeader>
-            <CardTitle className="text-sm">How to Use This Code</CardTitle>
+            <CardTitle className="text-sm">{isManual ? 'How to Use This Plan' : 'How to Use This Code'}</CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-gray-800 dark:text-gray-200 space-y-2">
-            {strategy.platform === 'pinescript' ? (
+            {isManual ? (
               <>
-                <p>1. Open TradingView and go to Pine Editor</p>
-                <p>2. Create a new indicator/strategy</p>
-                <p>3. Paste the code and click "Save"</p>
-                <p>4. Add to chart and configure settings</p>
+                <p>1. <strong>Review:</strong> Read through the Entry and Exit rules carefully.</p>
+                <p>2. <strong>Test:</strong> Open your chart and backtest these rules visually on historical data.</p>
+                <p>3. <strong>Execute:</strong> Follow the Psychology & Risk Management tips when trading live.</p>
+                <p>4. <strong>Automate:</strong> When ready, use the "Automate This Strategy" button to convert this into an EA.</p>
               </>
             ) : (
-              <>
-                <p>1. Open MetaTrader {strategy.platform === 'mql4' ? '4' : '5'}</p>
-                <p>2. Go to File → Open Data Folder → MQL{strategy.platform === 'mql4' ? '4' : '5'} → Experts</p>
-                <p>3. Save the downloaded file in this folder</p>
-                <p>4. Restart MetaTrader and find your EA in the Navigator</p>
-              </>
+              strategy.platform === 'pinescript' ? (
+                <>
+                  <p>1. Open TradingView and go to Pine Editor</p>
+                  <p>2. Create a new indicator/strategy</p>
+                  <p>3. Paste the code and click "Save"</p>
+                  <p>4. Add to chart and configure settings</p>
+                </>
+              ) : (
+                <>
+                  <p>1. Open MetaTrader {strategy.platform === 'mql4' ? '4' : '5'}</p>
+                  <p>2. Go to File → Open Data Folder → MQL{strategy.platform === 'mql4' ? '4' : '5'} → Experts</p>
+                  <p>3. Save the downloaded file in this folder</p>
+                  <p>4. Restart MetaTrader and find your EA in the Navigator</p>
+                </>
+              )
             )}
           </CardContent>
         </Card>

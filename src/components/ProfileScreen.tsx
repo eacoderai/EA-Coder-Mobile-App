@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "./ui/alert-dialog";
-import { User, Mail, Moon, Sun, LogOut, Shield, FileText, Crown, ChevronRight, Zap, Star, Play } from "lucide-react";
+import { User, Mail, Moon, Sun, LogOut, Shield, FileText, Crown, ChevronRight, Zap, Star, Play, HelpCircle } from "lucide-react";
 import { supabase } from '../utils/supabase/client';
 import { toast } from "../utils/tieredToast";
 import { Tier } from "../types/user";
@@ -136,7 +136,7 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
   const glassCardStyle: React.CSSProperties = {
     backdropFilter: 'blur(10px)',
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    border: '1px solid rgba(255, 255, 255, 0.18)',
+    border: '1px solid hsl(var(--border))',
     borderRadius: '25px',
     boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
   };
@@ -279,6 +279,32 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
                   disabled
                 />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Help Center Card */}
+        <Card
+          style={glassCardStyle}
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => onNavigate && onNavigate('help-center')}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center bg-purple-100 dark:bg-purple-900/30">
+                  <HelpCircle className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-gray-900 dark:text-white font-medium">
+                    Help Center
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    FAQ, Tutorials & Support
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-gray-400" />
             </div>
           </CardContent>
         </Card>

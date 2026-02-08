@@ -5,7 +5,8 @@ import { createClient } from 'npm:@supabase/supabase-js@^2.49.8';
 import * as kv from './kv_store.ts';
 import { withCorrelation, respondError, withTiming } from './error_utils.ts';
 import type Stripe from 'npm:stripe@^14.0.0';
-import { ForgotPasswordTemplate } from './forgot-password-template.ts';
+import { Resend } from 'npm:resend@^3.3.0';
+import { ForgotPasswordTemplate, EmailConfirmationTemplate } from './email-templates.ts';
 
 const envGet = (key: string): string | undefined => {
   try {
@@ -78,7 +79,7 @@ try {
 } catch (_e) {
   stripe = null;
 }
-const RESEND_API_KEY = envGet('RESEND_API_KEY') || '';
+const RESEND_API_KEY = envGet('RESEND_API_KEY');
 const FCM_SERVER_KEY = envGet('FCM_SERVER_KEY') || '';
 
 function sleep(ms: number) {
@@ -170,7 +171,7 @@ async function hashIdentity(input: string): Promise<string> {
 
 
 function siteUrl() {
-  return envGet('SITE_URL') || envGet('PUBLIC_SITE_URL') || envGet('NEXT_PUBLIC_SITE_URL') || '';
+  return envGet('SITE_URL') || envGet('PUBLIC_SITE_URL') || envGet('NEXT_PUBLIC_SITE_URL') || 'https://eacoderai.xyz';
 }
 
 function _functionUrl() {
@@ -197,13 +198,17 @@ function safeRedirectUrl(path: string) {
 async function sendEmailResend(to: string, subject: string, html: string) {
   if (!RESEND_API_KEY) return false;
   try {
-    const { Resend } = await import('npm:resend@^3.3.0');
     const resend = new Resend(RESEND_API_KEY);
     let attempt = 0;
     const max = 3;
     let lastErr: unknown = null;
     while (attempt < max) {
-      const { error } = await resend.emails.send({ from: 'EA Coder <no-reply@eacoder.app>', to: [to], subject, html });
+      const { error } = await resend.emails.send({ 
+        from: 'EA Coder <onboarding@resend.dev>', 
+        to: [to], 
+        subject, 
+        html 
+      });
       if (!error) return true;
       lastErr = error;
       await new Promise<void>(r => setTimeout(r, 250 * Math.pow(2, attempt)));
@@ -398,7 +403,7 @@ api.post('/signup', async (c) => {
         const expires = Date.now() + 24 * 60 * 60 * 1000;
         await kv.set(`magic:${confirmId}`, { email: emailStr, action_link: linkData.properties?.action_link || '', expires_at: expires, used: false });
         const href = safeRedirectUrl(`/magic/confirm?token=${confirmId}`);
-        const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Confirm your signup</h1><p>Hello ${nameStr},</p><p>Click the button below to confirm and sign in:</p><a href="${href}" style="background:#1f2937;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Confirm and Sign In</a><p>This link expires in 24 hours and is single-use.</p><p>EA Coder</p></div>`;
+        const html = EmailConfirmationTemplate(href, nameStr, siteUrl());
         const ok = await sendEmailResend(emailStr, 'Confirm your EA Coder account', html);
         const emailHash = await hashIdentity(emailStr);
         await kv.set(`audit:email:${Date.now()}:${emailHash}`, { event: ok ? 'magiclink_sent' : 'magiclink_send_failed', email_hash: emailHash, kind: 'signup' });
@@ -459,7 +464,7 @@ api.post('/forgot-password', async (c) => {
           const userName = data.user.user_metadata?.name || 'User';
           const rawProps = (data as unknown) as { properties?: { action_link?: unknown } };
           const resetLink = typeof rawProps.properties?.action_link === 'string' ? rawProps.properties!.action_link! : '';
-          const htmlContent = ForgotPasswordTemplate(resetLink, userName);
+          const htmlContent = ForgotPasswordTemplate(resetLink, userName, siteUrl());
           const ok = await sendEmailResend(email, 'Password Reset Request', htmlContent);
           if (ok) {
             return c.json({ message: 'Password reset email sent successfully.' });
@@ -598,7 +603,11 @@ api.post('/magic/request', async (c) => {
     }
     await kv.set(rateKey, rate);
     const supabaseAdmin = getSupabaseAdmin();
-    const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email });
+    const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({ 
+      type: 'magiclink', 
+      email,
+      options: { redirectTo: 'https://eacoderai.xyz' }
+    });
     if (linkErr || !linkData) return respondError(c, 500, 'magic_failed', 'Failed to issue magic link.');
     const id = crypto.randomUUID();
     const expires = Date.now() + 24 * 60 * 60 * 1000;
@@ -777,6 +786,27 @@ api.get('/strategies', async (c) => {
   }
 });
 
+export function validateStrategyData(body: any): string[] {
+  const { strategy_name, description, platform, strategy_type } = body || {};
+  const allowedPlatforms = new Set(['mql4', 'mql5', 'pinescript', 'manual']);
+  const errors: string[] = [];
+  
+  if (!description || typeof description !== 'string' || description.trim().length < 20) {
+    errors.push('Description must be at least 20 characters');
+  }
+  
+  // If automated, platform is required. If manual, platform is optional (or 'manual')
+  if (strategy_type !== 'manual' && (!platform || !allowedPlatforms.has(String(platform)))) {
+    errors.push('Platform must be one of mql4, mql5, pinescript');
+  }
+  
+  if (strategy_name && String(strategy_name).length > 120) {
+    errors.push('Strategy name must be 120 characters or less');
+  }
+  
+  return errors;
+}
+
 // Create new strategy
 api.post('/strategies', async (c) => {
   const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
@@ -788,18 +818,9 @@ api.post('/strategies', async (c) => {
   try {
     // Basic request validation before any writes
     const body = await c.req.json();
-    const { strategy_name, description, risk_management, instrument, platform, analysis_instrument, indicators, indicator_mode } = body || {};
-    const allowedPlatforms = new Set(['mql4', 'mql5', 'pinescript']);
-    const errors: string[] = [];
-    if (!description || typeof description !== 'string' || description.trim().length < 20) {
-      errors.push('Description must be at least 20 characters');
-    }
-    if (!platform || !allowedPlatforms.has(String(platform))) {
-      errors.push('Platform must be one of mql4, mql5, pinescript');
-    }
-    if (strategy_name && String(strategy_name).length > 120) {
-      errors.push('Strategy name must be 120 characters or less');
-    }
+    const { strategy_name, description, risk_management, instrument, platform, analysis_instrument, indicators, indicator_mode, strategy_type } = body || {};
+    
+    const errors = validateStrategyData(body);
     if (errors.length > 0) {
       await kv.set(`audit:${user.id}:strategy.create.validation:${Date.now()}`, {
         event: 'strategy.create.validation_failed',
@@ -853,9 +874,10 @@ api.post('/strategies', async (c) => {
       risk_management: risk_management || '',
       instrument: instrument || '',
       analysis_instrument: analysis_instrument || instrument || '',
-      platform,
+      platform: platform || 'manual',
       indicators: Array.isArray(indicators) ? indicators.filter(Boolean) : [],
       indicator_mode: (indicator_mode === 'single' || indicator_mode === 'multiple') ? indicator_mode : 'multiple',
+      strategy_type: strategy_type || 'manual',
       status: 'pending',
       generated_code: '',
       created_at: new Date().toISOString(),
@@ -903,7 +925,11 @@ api.post('/strategies', async (c) => {
         try {
           
           
-          const generatedCode = await generateCodeWithAI(platform, description, risk_management, instrument, { indicators: Array.isArray(body?.indicators) ? body.indicators.filter(Boolean) : [], indicator_mode: (body?.indicator_mode === 'single' || body?.indicator_mode === 'multiple') ? body.indicator_mode : 'multiple' });
+          const generatedCode = await generateCodeWithAI(platform, description, risk_management, instrument, { 
+            indicators: Array.isArray(body?.indicators) ? body.indicators.filter(Boolean) : [], 
+            indicator_mode: (body?.indicator_mode === 'single' || body?.indicator_mode === 'multiple') ? body.indicator_mode : 'multiple',
+            strategy_type: strategy.strategy_type
+          });
           strategy.status = 'generated';
           strategy.generated_code = generatedCode;
           await kv.set(`strategy:${user.id}:${strategyId}`, strategy);
@@ -1171,20 +1197,58 @@ api.post('/convert', async (c) => {
   }
 });
 
+// Helper to build system prompt for manual plans
+function buildManualPlanMessages(description: string, risk: string, instrument: string, indicators: string[]) {
+  const prompt = `You are an expert trading mentor. Create a structured manual trading plan for the following strategy description:
+"${description}"
+Instrument: ${instrument}
+Risk Management Preferences: ${risk}
+Indicators: ${indicators.join(', ')}
+
+Format the output with the following sections using clear bold headers (e.g. **Section**) and bullet points:
+- **Strategy Overview** 🎯: Brief summary of the logic.
+- **Entry Rules** ✅: Exact conditions to enter a trade (Long/Short).
+- **Exit Rules** 🛑: Exact conditions to take profit or stop loss.
+- **Risk Management** ⚖️: Position sizing, R:R ratio, and risk rules.
+- **Psychology & Tips** 🧠: Mental cues and what to watch out for.
+
+Use icons (✅, 🛑, 🎯, etc.) and keep it scannable. Do NOT generate code. Just the manual plan.`;
+
+  return [
+    { role: 'system', content: 'You are an expert trading mentor helping a trader define a manual strategy.' },
+    { role: 'user', content: prompt }
+  ] as ClaudeMessage[];
+}
+
 // AI-powered code generation function
-async function generateCodeWithAI(platform: string, description: string, riskManagement: string, instrument: string, extras?: { indicators?: string[]; indicator_mode?: 'single' | 'multiple' }): Promise<string> {
-  const strategy = { description, risk_management: riskManagement, instrument, timeframe: platform === 'pinescript' ? '60' : 'H1', platform, indicators: Array.isArray(extras?.indicators) ? extras!.indicators!.filter(Boolean) : [], indicator_mode: (extras?.indicator_mode === 'single' || extras?.indicator_mode === 'multiple') ? extras!.indicator_mode! : 'multiple' };
-  const messages = buildCodeMessages(platform, strategy) as ClaudeMessage[];
-  const type = deriveStrategyType(strategy);
+async function generateCodeWithAI(platform: string, description: string, riskManagement: string, instrument: string, extras?: { indicators?: string[]; indicator_mode?: 'single' | 'multiple'; strategy_type?: string }): Promise<string> {
+  const indicators = Array.isArray(extras?.indicators) ? extras!.indicators!.filter(Boolean) : [];
+  const isManual = extras?.strategy_type === 'manual';
+  
+  let messages: ClaudeMessage[] = [];
+  
+  if (isManual) {
+    messages = buildManualPlanMessages(description, riskManagement, instrument, indicators);
+  } else {
+    const strategy = { description, risk_management: riskManagement, instrument, timeframe: platform === 'pinescript' ? '60' : 'H1', platform, indicators, indicator_mode: (extras?.indicator_mode === 'single' || extras?.indicator_mode === 'multiple') ? extras!.indicator_mode! : 'multiple' };
+    messages = buildCodeMessages(platform, strategy) as ClaudeMessage[];
+  }
+
+  const type = deriveStrategyType({ description, risk_management: riskManagement, instrument, platform, indicators });
   await recordPromptVersion('codegen', type);
 
   try {
     const raw = await callClaudeAPI(messages, 0.25, 5000);
+    
+    if (isManual) {
+      return raw || 'Failed to generate manual plan.';
+    }
+
     const codeOnly = extractPrimaryCode((raw || '').trim(), platform);
     return codeOnly;
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to generate code using Claude API: ${msg}`);
+    throw new Error(`Failed to generate content using Claude API: ${msg}`);
   }
 }
 

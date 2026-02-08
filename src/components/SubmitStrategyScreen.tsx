@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { ScrollArea } from "./ui/scroll-area";
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { toast } from "../utils/tieredToast";
-import { getFunctionUrl } from '../utils/supabase/client';
+import { supabase, getFunctionUrl } from '../utils/supabase/client';
 import { Popover, PopoverTrigger, PopoverContent } from "./ui/popover";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "./ui/command";
 import { Badge } from "./ui/badge";
@@ -23,6 +23,7 @@ interface SubmitStrategyScreenProps {
   tier: Tier;
   remainingGenerations: number;
   onGenerationCount: (kind: 'code' | 'analysis') => void;
+  initialStrategyId?: string;
 }
 
 const STRATEGY_EXAMPLES = [
@@ -64,7 +65,7 @@ import { addLocalNotification } from '../utils/notifications';
 import { apiFetch } from '../utils/api';
 import { buildBacktestPayload, MAJOR_PAIRS, THREE_YEARS_MS, MULTI_CURRENCY_LABEL } from '../utils/backtestPayload';
 import type { StrategyCreateRequest, StrategyCreateResponse } from '../types/analysis';
-export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingGenerations, onGenerationCount }: SubmitStrategyScreenProps) {
+export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingGenerations, onGenerationCount, initialStrategyId }: SubmitStrategyScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [generationAttempts, setGenerationAttempts] = useState(0);
   const chartRef = useRef<HTMLDivElement | null>(null);
@@ -73,7 +74,8 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
     description: "",
     riskManagement: "",
     instrument: MULTI_CURRENCY_LABEL,
-    platform: ""
+    platform: "",
+    strategyType: 'manual' as 'automated' | 'manual'
   });
   type IndicatorOption = { id: string; label: string; custom?: boolean };
   type IndicatorMode = 'single' | 'multiple';
@@ -431,8 +433,13 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
     URL.revokeObjectURL(url);
   }
 
-  // Removed JS-based glass style to use Tailwind classes for theme support
-  // const glassCardStyle: React.CSSProperties = { ... };
+  const glassCardStyle: React.CSSProperties = {
+    backdropFilter: 'blur(10px)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    border: '1px solid hsl(var(--border))',
+    borderRadius: '25px',
+    boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
+  };
 
   const fetchUsage = async () => {
     if (!accessToken) {
@@ -563,12 +570,17 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
       return;
     }
 
-    if (formData.description.length < 20) {
-      toast.error("Strategy description must be at least 20 characters");
+    if (formData.strategyName.length > 120) {
+      toast.error("Strategy name must be 120 characters or less");
+      return;
+    }
+
+    if (formData.description.trim().length < 20) {
+      toast.error("Strategy description must be at least 20 characters (excluding whitespace)");
       return;
     }
     
-    if (!formData.riskManagement.trim()) {
+    if (formData.strategyType === 'automated' && !formData.riskManagement.trim()) {
       toast.error("Please provide risk management details");
       return;
     }
@@ -578,7 +590,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
       return;
     }
 
-    if (!formData.platform) {
+    if (formData.strategyType === 'automated' && !formData.platform) {
       toast.error("Please select a platform");
       return;
     }
@@ -597,9 +609,10 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         risk_management: formData.riskManagement,
         instrument: instrumentForCode,
         analysis_instrument: normalizedInstrument,
-        platform: formData.platform,
+        platform: formData.strategyType === 'manual' ? 'manual' : formData.platform,
         indicators: selectedIndicators.map(i => i.label),
         indicator_mode: indicatorMode,
+        strategy_type: formData.strategyType,
       };
       console.log('[Generate] Request start', {
         path: 'make-server-00a119be/strategies',
@@ -695,14 +708,28 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
 
       onNavigate('code', data.strategyId);
     } catch (error: any) {
-      console.error('[Generate] Exception', { errorMessage: error?.message, error });
-      if (error?.status === 403) {
+      console.error('[Generate] Exception', { 
+        message: error?.message, 
+        errors: error?.errors,
+        status: error?.status,
+        stack: error?.stack
+      });
+
+      // Handle detailed validation errors from server
+      if (error?.errors && Array.isArray(error.errors) && error.errors.length > 0) {
+        // Show the first error as a toast, or maybe join them
+        // Showing all might be too much, but let's show the first one clearly
+        // and maybe a generic message if there are many
+        error.errors.forEach((err: string) => toast.error(err));
+      } else if (error?.status === 403) {
         const msg = 'You have reached your strategy creation limit. Upgrade to Pro for 10 generations or Elite for unlimited access.';
+        toast.error(msg);
         // Auto-redirect to subscription when free limit reached
-        setTimeout(() => onNavigate('subscription'), 1200);
+        setTimeout(() => onNavigate('subscription'), 1500);
       } else if (typeof error?.message === 'string' && error.message.includes('Free tier limit reached — upgrade to continue')) {
+        toast.error('Free tier limit reached. Redirecting to upgrades...');
         // Seamless redirect
-        setTimeout(() => onNavigate('subscription'), 1200);
+        setTimeout(() => onNavigate('subscription'), 1500);
       } else {
         toast.error(error?.message || 'Failed to submit strategy');
       }
@@ -717,6 +744,46 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
     fetchStrategiesCount();
   }, [accessToken]);
 
+  // Load initial strategy if provided (e.g. "Automate This Strategy" flow)
+  useEffect(() => {
+    async function loadInitialStrategy() {
+      if (!initialStrategyId || !accessToken) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('strategies')
+          .select('*')
+          .eq('id', initialStrategyId)
+          .single();
+
+        if (error || !data) return;
+
+        setFormData(prev => ({
+          ...prev,
+          strategyName: data.strategy_name || prev.strategyName,
+          description: data.description || prev.description,
+          riskManagement: data.risk_management || prev.riskManagement,
+          instrument: data.instrument || prev.instrument,
+          // Force automated mode when pre-filling from an existing strategy (usually manual)
+          strategyType: 'automated',
+          platform: (data.platform && data.platform !== 'manual') ? data.platform : prev.platform
+        }));
+
+        if (Array.isArray(data.indicators) && data.indicators.length > 0) {
+          const newInds = data.indicators.map((label: string) => ({
+            id: `std:${label.toLowerCase()}`,
+            label,
+            custom: false
+          }));
+          setSelectedIndicators(newInds);
+        }
+      } catch (err) {
+        console.warn('Failed to load initial strategy', err);
+      }
+    }
+    loadInitialStrategy();
+  }, [initialStrategyId, accessToken]);
+
   // Removed auto-redirect on visiting this screen to avoid duplicate/early redirects.
 
   const fillExample = (example: typeof STRATEGY_EXAMPLES[0]) => {
@@ -729,21 +796,24 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-black flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
-      <div className="bg-white dark:bg-black border-b border-gray-200 dark:border-white/10 p-4 pb-5 sticky top-0 z-10 mb-4">
+      <div 
+        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 pb-10 rounded-b-[30px] mb-4"
+        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
+      >
         <div className="max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl xl:max-w-3xl mx-auto flex items-center">
           <Button
             variant="ghost"
             size="icon"
             onClick={() => onNavigate('home')}
-            className="mr-3 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10"
+            className="mr-3 text-white hover:bg-white/10"
           >
             <ArrowLeft className="w-5 h-5" />
           </Button>
           <div>
-            <h1 className="text-lg font-semibold text-gray-900 dark:text-white">Submit Strategy</h1>
-            <p className="text-xs text-gray-500 dark:text-white/70">Describe your trading idea</p>
+            <h1 className="text-lg font-semibold text-white">Submit Strategy</h1>
+            <p className="text-xs text-blue-100">Describe your trading idea</p>
           </div>
         </div>
       </div>
@@ -781,7 +851,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
           </div>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Card className="border border-white/40 dark:border-white/20 shadow-xl rounded-[30px] bg-white/20 backdrop-blur-xl dark:bg-gray-900">
+          <Card style={glassCardStyle}>
             <CardHeader>
               <CardTitle className="text-gray-900 dark:text-white">Strategy Details</CardTitle>
               <CardDescription className="text-gray-500 dark:text-gray-400">
@@ -789,6 +859,34 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Strategy Type Toggle */}
+              <div className="flex p-1 bg-gray-100 dark:bg-gray-800 rounded-[30px] mb-4" style={{ borderRadius: '30px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, strategyType: 'manual' })}
+                    style={{ borderRadius: '30px' }}
+                    className={`flex-1 py-2 px-4 text-sm font-medium transition-all duration-200 ${
+                      formData.strategyType === 'manual'
+                        ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    Trade this manually
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, strategyType: 'automated' })}
+                    style={{ borderRadius: '30px' }}
+                    className={`flex-1 py-2 px-4 text-sm font-medium transition-all duration-200 ${
+                      formData.strategyType === 'automated'
+                        ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    }`}
+                  >
+                    Automate this strategy
+                  </button>
+                </div>
+
               <div className="space-y-2">
                 <Label htmlFor="strategy-name" className="text-gray-900 dark:text-white">Strategy Name *</Label>
                 <Input
@@ -797,7 +895,8 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                   value={formData.strategyName}
                   onChange={(e) => setFormData({ ...formData, strategyName: e.target.value })}
                   required
-                  className="rounded-[24px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500"
+                  style={{ borderRadius: '30px' }}
+                  className="bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500"
                 />
               </div>
 
@@ -806,7 +905,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                   <Label htmlFor="description" className="text-gray-900 dark:text-white">Strategy Description *</Label>
                   <Dialog open={examplesOpen} onOpenChange={setExamplesOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" type="button" className="text-gray-900 dark:text-white hover:text-gray-700 dark:hover:text-white/90 hover:bg-gray-100 dark:hover:bg-white/10">
+                      <Button variant="ghost" size="sm" type="button" style={{ borderRadius: '30px' }} className="text-gray-900 dark:text-white hover:text-gray-700 dark:hover:text-white/90 hover:bg-gray-100 dark:hover:bg-white/10">
                         <HelpCircle className="w-4 h-4 mr-1" />
                         Examples
                       </Button>
@@ -849,13 +948,15 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   required
-                  className="rounded-[24px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500"
+                  style={{ borderRadius: '30px' }}
+                  className="bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500"
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Minimum 20 characters ({formData.description.length}/20)
+                  Minimum 20 characters ({formData.description.trim().length}/20)
                 </p>
               </div>
 
+              {formData.strategyType === 'automated' && (
               <div className="space-y-2">
                 <Label htmlFor="risk" className="text-gray-900 dark:text-white">Risk Management *</Label>
                 <Textarea
@@ -865,9 +966,11 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                   value={formData.riskManagement}
                   onChange={(e) => setFormData({ ...formData, riskManagement: e.target.value })}
                   required
-                  className="rounded-[24px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500"
+                  style={{ borderRadius: '30px' }}
+                  className="rounded-[30px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white placeholder:text-gray-500"
                 />
               </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="instrument" className="text-gray-900 dark:text-white">Instrument *</Label>
@@ -875,7 +978,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                   value={formData.instrument}
                   onValueChange={(value) => setFormData({ ...formData, instrument: value })}
                 >
-                  <SelectTrigger id="instrument" className="rounded-[24px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white">
+                  <SelectTrigger id="instrument" style={{ borderRadius: '30px', paddingLeft: '20px', paddingRight: '20px' }} className="pl-5 rounded-[30px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white">
                     <SelectValue placeholder="Select instrument" />
                   </SelectTrigger>
                   <SelectContent>
@@ -888,6 +991,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                 </Select>
               </div>
 
+              {formData.strategyType === 'automated' && (
               <div className="space-y-2">
                 <Label htmlFor="platform" className="text-gray-900 dark:text-white">Platform *</Label>
                 <Select
@@ -895,7 +999,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                   onValueChange={(value) => setFormData({ ...formData, platform: value })}
                   required
                 >
-                  <SelectTrigger id="platform" className="rounded-[24px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white">
+                  <SelectTrigger id="platform" style={{ borderRadius: '30px', paddingLeft: '20px', paddingRight: '20px' }} className="pl-5 rounded-[30px] bg-white/20 backdrop-blur-md border-gray-200/50 shadow-sm hover:bg-white/40 focus:bg-white/60 transition-all duration-200 dark:bg-gray-800 dark:border-gray-700 text-gray-900 dark:text-white">
                     <SelectValue placeholder="Select platform" />
                   </SelectTrigger>
                   <SelectContent>
@@ -913,10 +1017,12 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
                   </SelectContent>
                 </Select>
               </div>
+              )}
             </CardContent>
           </Card>
 
-          <Card className="border border-white/40 dark:border-white/20 shadow-xl rounded-[30px] bg-white/20 backdrop-blur-xl dark:bg-gray-900">
+          {formData.strategyType === 'automated' && (
+          <Card style={glassCardStyle}>
             <CardHeader>
               <CardTitle className="text-gray-900 dark:text-white">Indicators (Optional)</CardTitle>
               <CardDescription className="text-gray-500 dark:text-gray-400">
@@ -936,7 +1042,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
               </div>
               <Popover open={indicatorOpen} onOpenChange={setIndicatorOpen}>
                 <PopoverTrigger asChild>
-                  <Button type="button" variant="outline" className="w-full justify-between bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Select Indicator">
+                  <Button type="button" variant="outline" style={{ borderRadius: '30px', paddingLeft: '20px', paddingRight: '20px' }} className="pl-5 w-full justify-between rounded-[30px] bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Select Indicator">
                     <span className="truncate">
                       {selectedIndicators.length === 0 ? 'Choose indicator' : indicatorMode === 'single' ? selectedIndicators[0]?.label : `${selectedIndicators.length} selected`}
                     </span>
@@ -1009,29 +1115,34 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
               )}
             </CardContent>
           </Card>
+          )}
 
           <Button
             type="submit"
+            style={{ borderRadius: '30px' }}
             className="w-full"
             disabled={isLoading}
           >
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Generating Code...
+                {formData.strategyType === 'manual' ? 'Generating Plan...' : 'Generating Code...'}
               </>
             ) : (
               <>
                 <Send className="w-4 h-4 mr-2" />
-                Generate Expert Advisor
+                {formData.strategyType === 'manual' ? 'Generate Trading Plan' : 'Generate Expert Advisor'}
               </>
             )}
           </Button>
 
-          <Card className="border border-gray-200 dark:border-white/20 shadow-sm rounded-lg bg-gray-50 dark:bg-gray-800">
+          <Card style={glassCardStyle}>
             <CardContent className="p-4">
               <p className="text-xs text-gray-600 dark:text-gray-300">
-                <strong>Note:</strong> After you click Generate, you’ll go straight to the code screen while generation runs in the background (usually 10–15 seconds).
+                <strong>Note:</strong> {formData.strategyType === 'manual' 
+                  ? "After you click Generate, you’ll be taken to the results screen where your comprehensive trading plan will be generated." 
+                  : "After you click Generate, you’ll go straight to the code screen while generation runs in the background (usually 10–15 seconds)."
+                }
               </p>
             </CardContent>
           </Card>

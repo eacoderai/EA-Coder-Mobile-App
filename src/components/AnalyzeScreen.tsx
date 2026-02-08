@@ -484,7 +484,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
               </p>
             </div>
             {tier && (
-              <Badge variant="outline" className="ml-2">
+              <Badge variant="outline" className="ml-2 text-white border-white/30">
                 {tier === 'free' ? 'Free Plan' : tier === 'pro' ? 'Pro' : 'Elite'}
               </Badge>
             )}

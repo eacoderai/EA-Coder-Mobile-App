@@ -17,6 +17,7 @@ interface Strategy {
   platform: string;
   status: string;
   created_at: string;
+  strategy_type?: 'automated' | 'manual';
 }
 
 import { PullToRefresh } from "./ui/PullToRefresh";
@@ -212,8 +213,9 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
                   }
                 }}
                 style={{ borderRadius: '30px'}}
+                className="px-10 has-[>svg]:px-10"
               >
-                <Plus className="w-5 h-5 mr-2" />
+                <Plus className="w-5 h-5" />
                 Submit Strategy
               </Button>
             </CardContent>
@@ -232,6 +234,11 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
+                      <div className="mb-1">
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                          {strategy.strategy_type === 'manual' ? 'Manual' : 'Automated'}
+                        </Badge>
+                      </div>
                       <CardTitle className="text-base mb-1">
                         {strategy.strategy_name || 'Untitled Strategy'}
                       </CardTitle>

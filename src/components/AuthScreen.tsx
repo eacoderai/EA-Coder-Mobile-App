@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import React, { useState } from "react";
+﻿﻿﻿﻿﻿﻿﻿import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -191,7 +191,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
             />
           </div>
           <h1 className="text-3xl mb-2 text-gray-900 dark:text-white font-normal text-[32px]">EA Coder</h1>
-          <p className="text-gray-600 dark:text-gray-400">AI-Powered Expert Advisor Generator</p>
+          <p className="text-gray-600 dark:text-gray-400">AI-Powered Trading Planner & Expert Advisor Generator</p>
         </div>
 
         {/* Features */}
@@ -203,7 +203,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
           </div>
           <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
             <TrendingUp className="w-5 h-5 text-green-600 mb-1" />
-            <p className="text-sm text-gray-900 dark:text-white">AI Analysis</p>
+            <p className="text-sm text-gray-900 dark:text-white">AI Trading Planner</p>
             <p className="text-xs text-gray-500 dark:text-gray-400">Backtest Metrics</p>
           </div>
         </div>
@@ -272,7 +272,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                             setShowLoginPassword(!showLoginPassword);
                           }
                         }}
-                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10"
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10 translate-y-[3px]"
                       >
                         {showLoginPassword ? (
                           <EyeOff className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
@@ -358,7 +358,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                             setShowSignupPassword(!showSignupPassword);
                           }
                         }}
-                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10"
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10 translate-y-[3px]"
                       >
                         {showSignupPassword ? (
                           <EyeOff className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
@@ -395,7 +395,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                             setShowConfirmPassword(!showConfirmPassword);
                           }
                         }}
-                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10 pb-1"
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10 pb-1 translate-y-[3px]"
                       >
                         {showConfirmPassword ? (
                           <EyeOff className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />

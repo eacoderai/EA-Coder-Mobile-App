@@ -10,7 +10,7 @@ interface BottomNavProps {
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   const tabs = [
     { id: "home", label: "Home", icon: Home },
-    { id: "analyze", label: "Analyze", icon: BarChart3 },
+    { id: "analyze", label: "Analysis", icon: BarChart3 },
     { id: "chat", label: "Chat", icon: MessageSquare },
     { id: "convert", label: "Convert", icon: RefreshCw },
     { id: "profile", label: "Profile", icon: User },
