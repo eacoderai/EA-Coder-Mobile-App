@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿import React, { useState } from "react";
+﻿﻿﻿﻿﻿﻿import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -526,7 +526,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                       setResetError("");
                       setResetMessage("");
                       try {
-                        const response = await fetch(getFunctionUrl('reset/request'), {
+                        const response = await fetch(getFunctionUrl('forgot-password'), {
                           method: 'POST',
                           headers: {
                             'Content-Type': 'application/json',
@@ -541,8 +541,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                             msg = errorData?.error || errorData?.message || msg;
                           } catch {}
                           try {
-                            const origin = typeof window !== 'undefined' ? window.location.origin : undefined;
-                            const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, origin ? { redirectTo: origin } : undefined);
+                            const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, { redirectTo: 'eacoder://update-password' });
                             if (error) throw new Error(error.message || msg);
                           } catch (e: any) {
                             throw new Error(e?.message || msg);

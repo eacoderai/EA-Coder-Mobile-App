@@ -478,7 +478,7 @@ api.post('/forgot-password', async (c) => {
         const { data, error } = await supabaseAdmin.auth.admin.generateLink({ 
           type: 'recovery', 
           email, 
-          options: { redirectTo: 'eacoder://eacoderai.xyz/update-password' } 
+          options: { redirectTo: 'eacoder://update-password' } 
         });
         if (!error && data) {
           const userName = data.user.user_metadata?.name || 'User';
@@ -489,7 +489,7 @@ api.post('/forgot-password', async (c) => {
           const resetLink = typeof rawProps.properties?.action_link === 'string' ? rawProps.properties!.action_link! : '';
           
           // Fallback if action_link is empty: manually construct bridge URL using custom scheme
-          const finalLink = resetLink || `eacoder://eacoderai.xyz/update-password?token=${(rawProps as any)?.properties?.email_otp || ''}&type=recovery`;
+          const finalLink = resetLink || `eacoder://update-password?token=${(rawProps as any)?.properties?.email_otp || ''}&type=recovery`;
 
           const htmlContent = ForgotPasswordTemplate(finalLink, userName, siteUrl());
           const ok = await sendEmailResend(email, 'Password Reset Request', htmlContent);
@@ -509,7 +509,7 @@ api.post('/forgot-password', async (c) => {
   try {
     const supabaseAnon = getSupabaseAnon();
     // Force custom scheme for redirect
-    const redirect = 'eacoder://eacoderai.xyz/update-password';
+    const redirect = 'eacoder://update-password';
     const { error: resetErr } = await supabaseAnon.auth.resetPasswordForEmail(email, { redirectTo: redirect });
     if (resetErr) {
       console.log('resetPasswordForEmail error:', resetErr);
