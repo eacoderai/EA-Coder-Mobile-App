@@ -8,6 +8,11 @@ import type Stripe from 'npm:stripe@^14.0.0';
 import { Resend } from 'npm:resend@^3.3.0';
 import { ForgotPasswordTemplate, EmailConfirmationTemplate } from './email-templates.ts';
 
+// Helper to validate email OTP types
+const isEmailOtp = (v: string | null): v is EmailOtpType => {
+  return v === 'signup' || v === 'invite' || v === 'magiclink' || v === 'recovery' || v === 'email_change' || v === 'email';
+};
+
 const envGet = (key: string): string | undefined => {
   try {
     const hasEnv = typeof Deno !== 'undefined' && typeof (Deno as { env?: { get?: (k: string) => string | undefined } }).env?.get === 'function';
@@ -204,7 +209,7 @@ async function sendEmailResend(to: string, subject: string, html: string) {
     let lastErr: unknown = null;
     while (attempt < max) {
       const { error } = await resend.emails.send({ 
-        from: 'EA Coder <onboarding@resend.dev>', 
+        from: 'EA Coder <team@eacoderai.xyz>', 
         to: [to], 
         subject, 
         html 
@@ -397,12 +402,23 @@ api.post('/signup', async (c) => {
       return respondError(c, 400, 'invalid_input', 'Invalid input.');
     }
     try {
-      const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email: emailStr });
+      const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'signup', email: emailStr });
       if (!linkErr && linkData) {
         const confirmId = crypto.randomUUID();
         const expires = Date.now() + 24 * 60 * 60 * 1000;
-        await kv.set(`magic:${confirmId}`, { email: emailStr, action_link: linkData.properties?.action_link || '', expires_at: expires, used: false });
-        const href = safeRedirectUrl(`/magic/confirm?token=${confirmId}`);
+        
+        // Store user_id in KV to allow force confirmation fallback
+        await kv.set(`magic:${confirmId}`, { 
+          email: emailStr, 
+          user_id: data.user?.id, 
+          action_link: linkData.properties?.action_link || '', 
+          expires_at: expires, 
+          used: false 
+        });
+        
+        // Use server-side confirmation endpoint for immediate verification
+        const serverUrl = envGet('SUPABASE_URL') || 'https://iixyfjipzvrfuzlxaneb.supabase.co';
+        const href = `${serverUrl}/functions/v1/server/magic/confirm?token=${confirmId}`;
         const html = EmailConfirmationTemplate(href, nameStr, siteUrl());
         const ok = await sendEmailResend(emailStr, 'Confirm your EA Coder account', html);
         const emailHash = await hashIdentity(emailStr);
@@ -459,12 +475,23 @@ api.post('/forgot-password', async (c) => {
     if (RESEND_API_KEY) {
       try {
         const supabaseAdmin = getSupabaseAdmin();
-        const { data, error } = await supabaseAdmin.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo: SITE_URL || safeRedirectUrl('/') } });
+        const { data, error } = await supabaseAdmin.auth.admin.generateLink({ 
+          type: 'recovery', 
+          email, 
+          options: { redirectTo: 'eacoder://eacoderai.xyz/update-password' } 
+        });
         if (!error && data) {
           const userName = data.user.user_metadata?.name || 'User';
           const rawProps = (data as unknown) as { properties?: { action_link?: unknown } };
+          
+          // Use the action_link directly if available
+          // Since we set redirectTo to the custom scheme, Supabase should generate a link that redirects there
           const resetLink = typeof rawProps.properties?.action_link === 'string' ? rawProps.properties!.action_link! : '';
-          const htmlContent = ForgotPasswordTemplate(resetLink, userName, siteUrl());
+          
+          // Fallback if action_link is empty: manually construct bridge URL using custom scheme
+          const finalLink = resetLink || `eacoder://eacoderai.xyz/update-password?token=${(rawProps as any)?.properties?.email_otp || ''}&type=recovery`;
+
+          const htmlContent = ForgotPasswordTemplate(finalLink, userName, siteUrl());
           const ok = await sendEmailResend(email, 'Password Reset Request', htmlContent);
           if (ok) {
             return c.json({ message: 'Password reset email sent successfully.' });
@@ -481,8 +508,9 @@ api.post('/forgot-password', async (c) => {
   // Built-in Supabase mailer fallback using anon client
   try {
     const supabaseAnon = getSupabaseAnon();
-    const redirect = safeRedirectUrl('/');
-    const { error: resetErr } = await supabaseAnon.auth.resetPasswordForEmail(email, redirect ? { redirectTo: redirect } : undefined);
+    // Force custom scheme for redirect
+    const redirect = 'eacoder://eacoderai.xyz/update-password';
+    const { error: resetErr } = await supabaseAnon.auth.resetPasswordForEmail(email, { redirectTo: redirect });
     if (resetErr) {
       console.log('resetPasswordForEmail error:', resetErr);
       return respondError(c, 500, 'reset_failed', 'Failed to initiate password reset.');
@@ -639,16 +667,105 @@ api.get('/magic/confirm', async (c) => {
   try {
     const url = new URL(c.req.url);
     const token = url.searchParams.get('token') || '';
+    
+    console.log(`[Confirm] Request token: ${token}`);
+    
     const rec = await kv.get(`magic:${token}`);
-    if (!rec || rec.used || Date.now() > rec.expires_at) return respondError(c, 400, 'invalid_or_expired', 'Invalid or expired link.');
+    
+    // If invalid or expired, redirect to frontend error page
+    if (!rec) {
+      console.log(`[Confirm] Token not found in KV: ${token}`);
+      return c.redirect('http://eacoderai.xyz/confirmation?status=error&reason=expired&detail=token_not_found');
+    }
+    
+    if (rec.used) {
+      console.log(`[Confirm] Token already used: ${token}`);
+      return c.redirect('http://eacoderai.xyz/confirmation?status=error&reason=expired&detail=already_used');
+    }
+    
+    if (Date.now() > rec.expires_at) {
+      console.log(`[Confirm] Token expired: ${token}`);
+      return c.redirect('http://eacoderai.xyz/confirmation?status=error&reason=expired&detail=token_expired');
+    }
+
     rec.used = true;
     rec.used_at = new Date().toISOString();
     await kv.set(`magic:${token}`, rec);
+
     const ehash = await hashIdentity(rec.email);
     await kv.set(`magic:stats:${ehash}:${Date.now()}`, { event: 'used', email_hash: ehash });
-    return c.redirect(rec.action_link);
+
+    // Perform verification against Supabase Auth
+    try {
+      console.log(`[Confirm] Action Link: ${rec.action_link}`);
+      
+      const u = new URL(rec.action_link);
+      let tokenHash = u.searchParams.get('token_hash');
+      const tokenVal = u.searchParams.get('token');
+      const typeRaw = u.searchParams.get('type');
+      
+      console.log(`[Confirm] Parsed - Hash: ${tokenHash ? 'present' : 'missing'}, TokenVal: ${tokenVal ? 'present' : 'missing'}, Type: ${typeRaw}`);
+      
+      // Fallback: Use 'token' param as 'token_hash' if token_hash is missing but token is present (Supabase PKCE/Flow variation)
+      if (!tokenHash && tokenVal) {
+          console.log('[Confirm] Using token param as token_hash');
+          tokenHash = tokenVal;
+      }
+      
+      const t = isEmailOtp(typeRaw) ? (typeRaw as EmailOtpType) : null;
+
+      if (!tokenHash || !t) {
+        console.log('Invalid link data in KV:', { action_link: rec.action_link });
+        return c.redirect(`http://eacoderai.xyz/confirmation?status=error&reason=invalid_link_data&detail=${encodeURIComponent('Missing token_hash or invalid type')}`);
+      }
+
+      const supabaseAnon = getSupabaseAnon();
+      const { data: verifyData, error } = await supabaseAnon.auth.verifyOtp({ type: t, token_hash: tokenHash });
+      
+      if (error) {
+          console.log('Verification error:', error);
+          
+          // Force confirm fallback if we have user_id
+          if (rec.user_id) {
+             try {
+               console.log(`[Confirm] Attempting force confirmation for user ${rec.user_id}`);
+               const supabaseAdmin = getSupabaseAdmin();
+               const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(rec.user_id, { email_confirm: true });
+               if (!updateErr) {
+                 console.log(`[Confirm] Force confirmation successful for user ${rec.user_id}`);
+                 return c.redirect('http://eacoderai.xyz/confirmation?status=success');
+               } else {
+                 console.log(`[Confirm] Force confirmation failed:`, updateErr);
+               }
+             } catch (fcError) {
+                console.log(`[Confirm] Force confirmation exception:`, fcError);
+             }
+          }
+          
+          return c.redirect(`http://eacoderai.xyz/confirmation?status=error&reason=verification_failed&detail=${encodeURIComponent(error.message)}`);
+      }
+      
+      console.log('[Confirm] Verification successful', verifyData);
+      
+      // Double check: Ensure email_confirm is true
+      if (rec.user_id || verifyData.user?.id) {
+         const uid = rec.user_id || verifyData.user?.id;
+         try {
+             const supabaseAdmin = getSupabaseAdmin();
+             await supabaseAdmin.auth.admin.updateUserById(uid, { email_confirm: true });
+         } catch (e) { console.log('Post-verification confirmation ensure failed', e); }
+      }
+      
+    } catch (e: any) {
+      console.log('Verification exception:', e);
+      return c.redirect(`http://eacoderai.xyz/confirmation?status=error&reason=exception&detail=${encodeURIComponent(e.message || String(e))}`);
+    }
+
+    // Success! Redirect to frontend success page
+    return c.redirect('http://eacoderai.xyz/confirmation?status=success');
   } catch (error: any) {
-    return respondError(c, 500, 'magic_failed', 'Failed to process confirmation.', { errorMessage: error?.message });
+    console.log('[Confirm] Outer exception:', error);
+    return c.redirect(`http://eacoderai.xyz/confirmation?status=error&reason=server_error&detail=${encodeURIComponent(error.message || String(error))}`);
   }
 });
 
@@ -673,6 +790,45 @@ api.get('/auth/reset-callback', async (c) => {
     }
   } catch {
     return c.redirect(safeRedirectUrl('/reset-password?status=error') || '/');
+  }
+});
+
+api.post('/magic/verify', async (c) => {
+  try {
+    const { token } = await c.req.json();
+    if (!token) return respondError(c, 400, 'missing_token', 'Token is required.');
+
+    const rec = await kv.get(`magic:${token}`);
+    if (!rec || rec.used || Date.now() > rec.expires_at) {
+      return respondError(c, 400, 'invalid_or_expired', 'Invalid or expired link.');
+    }
+
+    rec.used = true;
+    rec.used_at = new Date().toISOString();
+    await kv.set(`magic:${token}`, rec);
+
+    const ehash = await hashIdentity(rec.email);
+    await kv.set(`audit:email:${Date.now()}:${ehash}`, { event: 'magiclink_used', email_hash: ehash });
+
+    const u = new URL(rec.action_link);
+    const tokenHash = u.searchParams.get('token_hash');
+    const typeRaw = u.searchParams.get('type');
+    const t = isEmailOtp(typeRaw) ? (typeRaw as OtpEmailType) : null;
+
+    if (!tokenHash || !t) {
+      return respondError(c, 400, 'invalid_link_data', 'Link data is invalid.');
+    }
+
+    const supabaseAnon = getSupabaseAnon();
+    const { error } = await supabaseAnon.auth.verifyOtp({ type: t, token_hash: tokenHash });
+
+    if (error) {
+      return respondError(c, 400, 'verification_failed', 'Verification failed or expired.');
+    }
+
+    return c.json({ success: true, message: 'Email confirmed successfully.' });
+  } catch (error: any) {
+    return respondError(c, 500, 'verification_error', 'Internal verification error.', { errorMessage: error?.message });
   }
 });
 

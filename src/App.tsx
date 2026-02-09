@@ -18,8 +18,10 @@ import { TermsScreen } from "./components/TermsScreen";
 import { BottomNav } from "./components/BottomNav";
 import { HelpBubble } from "./components/HelpBubble";
 import { HelpCenterScreen } from "./components/HelpCenterScreen";
+import UpdatePasswordScreen from "./components/UpdatePasswordScreen";
 import { Toaster } from "./components/ui/sonner";
 import { toast, setToastAccountType } from "./utils/tieredToast";
+import { App as CapacitorApp } from '@capacitor/app';
 import { supabase, getFunctionUrl } from './utils/supabase/client';
 import { projectId } from './utils/supabase/info';
 import { shouldShowLimitToast, logSuppressedLimitToast } from './utils/limits';
@@ -65,6 +67,45 @@ export default function App() {
     // Keep toast system aware of current account type (includes dev override)
     setToastAccountType(effectiveTier);
   }, [effectiveTier]);
+
+  useEffect(() => {
+    // Handle Deep Links (Mobile)
+    CapacitorApp.addListener('appUrlOpen', (data) => {
+      try {
+        const url = new URL(data.url);
+        // Handle password reset link: eacoder://eacoderai.xyz/update-password or eacoder://update-password
+        if (url.pathname.includes('update-password') || url.pathname.includes('reset-password') || url.hostname === 'update-password') {
+           // If we have hash params (Supabase default), parse them
+           // Supabase sends: .../update-password#access_token=...&refresh_token=...
+           // We need to convert hash to search params for easier handling if needed, 
+           // but Supabase client usually handles session recovery if we pass the URL.
+           
+           // However, for explicit password reset flow:
+           const accessToken = new URLSearchParams(url.hash.substring(1)).get('access_token');
+           const refreshToken = new URLSearchParams(url.hash.substring(1)).get('refresh_token');
+           
+           if (accessToken && refreshToken) {
+             supabase.auth.setSession({
+               access_token: accessToken,
+               refresh_token: refreshToken
+             }).then(() => {
+               // Navigate to update password screen
+               // Since we are in the app, we can just render the component or set state
+               // But our routing is basic. Let's use a state or a simple window location hack if needed.
+               // Better: Set a state 'forceShowUpdatePassword'
+               if (window.location) {
+                 // Update URL without reload to trigger our existing route check? 
+                 // Or just set the state directly.
+                 setCurrentScreen("update-password"); 
+               }
+             });
+           }
+        }
+      } catch (e) {
+        console.error('Deep link error:', e);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     try {
@@ -370,6 +411,16 @@ export default function App() {
     );
   }
 
+  // Handle Update Password Route (before auth checks)
+  if ((typeof window !== 'undefined' && window.location.pathname.includes('update-password')) || currentScreen === "update-password") {
+    return (
+      <ThemeProvider>
+        <UpdatePasswordScreen />
+        <Toaster />
+      </ThemeProvider>
+    );
+  }
+
   if (isCheckingAuth) {
     return (
       <ThemeProvider>
@@ -491,6 +542,9 @@ export default function App() {
             onNavigate={handleNavigate}
             activeTab={activeTab}
           />
+        )}
+        {currentScreen === "update-password" && (
+          <UpdatePasswordScreen />
         )}
       </div>
 
