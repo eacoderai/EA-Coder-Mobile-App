@@ -31,21 +31,36 @@ interface HomeScreenProps {
   hasActivePlan: boolean;
   remainingGenerations?: number;
   tier: Tier;
+  onRefresh?: () => Promise<void>;
 }
 
 import { RestrictedBanner } from './RestrictedBanner';
-export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, remainingGenerations = 0, tier }: HomeScreenProps) {
+export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, remainingGenerations = 0, tier, onRefresh }: HomeScreenProps) {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showQuotaPopup, setShowQuotaPopup] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [storageVersion, setStorageVersion] = useState(0);
+  const firstLoadRef = React.useRef(true);
   
   const currentLimit = TIER_LIMITS[tier].generations;
-  const showLimitBanner = tier === 'free' || tier === 'pro';
+  const showLimitBanner = tier !== 'elite';
 
   useEffect(() => {
-    loadStrategies();
+    loadStrategies(firstLoadRef.current);
+    firstLoadRef.current = false;
   }, [accessToken]);
 
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (!e.key) return;
+      if (e.key.startsWith('strategy_code:') || e.key.startsWith('strategy_plan:') || e.key.startsWith('strategy_label:')) {
+        setStorageVersion((v) => v + 1);
+      }
+    };
+    if (typeof window !== 'undefined') window.addEventListener('storage', handler);
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('storage', handler); };
+  }, []);
   const loadStrategies = async (showLoadingState = true) => {
     if (!accessToken) {
       setIsLoading(false);
@@ -57,20 +72,33 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
     }
     try {
       const response = await fetch(
-        getFunctionUrl('make-server-00a119be/strategies'),
+        getFunctionUrl(`make-server-00a119be/strategies?t=${Date.now()}`),
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`
-          }
+          },
+          cache: 'no-store'
         }
       );
       
       if (response.ok) {
         const data = await response.json();
         setStrategies(data.strategies || []);
+        if (data._debug) {
+          setDebugInfo(data._debug);
+          console.log('[HomeScreen] Backend debug info:', data._debug);
+        }
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        console.error('Failed to load strategies:', response.status, errData);
+        // Only show toast if it's a real error, not just empty
+        if (response.status !== 404) {
+          toast.error(errData.message || 'Failed to load strategies');
+        }
       }
     } catch (error) {
       console.error('Failed to load strategies:', error);
+      toast.error('Network error while loading strategies');
     } finally {
       setIsLoading(false);
     }
@@ -121,12 +149,12 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
               <div className="mr-3">
                 <img
                   src={logoImage}
-                  alt="EA Coder"
+                  alt="EACoder AI"
                   className="w-16 h-auto relative top-[2px]"
                 />
               </div>
               <div>
-                <h1 className="text-2xl relative top-[2px]">EA Coder</h1>
+                <h1 className="text-2xl relative top-[2px]">EACoder AI</h1>
                 <p className="text-sm text-blue-100">Your AI Trading Assistant</p>
               </div>
             </div>
@@ -152,7 +180,14 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
               if (isLimitReached) {
                 setShowQuotaPopup(true);
               } else {
-                try { if (typeof window !== 'undefined') window.localStorage.setItem('reset-indicators-on-new-strategy', '1'); } catch {}
+                try { 
+                  if (typeof window !== 'undefined') {
+                    window.localStorage.setItem('reset-indicators-on-new-strategy', '1');
+                    window.localStorage.removeItem('submit:targetType');
+                    window.localStorage.removeItem('submit:initId');
+                    window.localStorage.removeItem('lastSelectedStrategyId');
+                  } 
+                } catch {}
                 onNavigate('submit');
               }
             }}
@@ -170,7 +205,12 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
       {/* Content */}
       <PullToRefresh 
         className="app-container flex-1 pt-4 safe-nav-pad"
-        onRefresh={() => loadStrategies(false)}
+        onRefresh={async () => {
+          await Promise.all([
+            loadStrategies(false),
+            onRefresh ? onRefresh() : Promise.resolve()
+          ]);
+        }}
       >
         <div className="mb-4">
           <h2 className="text-lg mb-2 text-gray-900 dark:text-white">Recent Strategies</h2>
@@ -190,7 +230,7 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
               <div className="bg-blue-100 dark:bg-blue-900/30 p-4 rounded-full mb-4">
                 <img
                   src={logoImage}
-                  alt="EA Coder"
+                  alt="EACoder AI"
                   className="w-26 h-24"
                 />
               </div>
@@ -198,6 +238,7 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
               <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">
                 Create your first Expert Advisor using plain English
               </p>
+
               <Button
                 onClick={() => {
                   if (remainingGenerations <= 0) {
@@ -209,19 +250,26 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
                     );
                     setTimeout(() => onNavigate('subscription'), 1000);
                   } else {
+                    try { 
+                      if (typeof window !== 'undefined') {
+                        window.localStorage.setItem('reset-indicators-on-new-strategy', '1');
+                        window.localStorage.removeItem('submit:targetType');
+                        window.localStorage.removeItem('submit:initId');
+                        window.localStorage.removeItem('lastSelectedStrategyId');
+                      }
+                    } catch {}
                     onNavigate('submit');
                   }
                 }}
                 style={{ borderRadius: '30px'}}
-                className="px-10 has-[>svg]:px-10"
+                className="w-[260px] sm:w-[280px] px-12 has-[>svg]:px-12 gap-2"
               >
-                <Plus className="w-5 h-5" />
-                Submit Strategy
+                <span className="px-4">Submit Strategy</span>
               </Button>
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3" data-storage-version={storageVersion}>
             {strategies.map((strategy) => (
               <Card
                 key={strategy.id}
@@ -235,9 +283,47 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="mb-1">
-                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                          {strategy.strategy_type === 'manual' ? 'Manual' : 'Automated'}
-                        </Badge>
+                        {(() => {
+                          let labelOverride: string | null = null;
+                          let codeLocal: string | null = null;
+                          let planLocal: string | null = null;
+                          try {
+                            if (typeof window !== 'undefined') {
+                              labelOverride = window.localStorage.getItem(`strategy_label:${strategy.id}`);
+                              const c = window.localStorage.getItem(`strategy_code:${strategy.id}`);
+                              const p = window.localStorage.getItem(`strategy_plan:${strategy.id}`);
+                              const hc = window.localStorage.getItem(`strategy_has_code:${strategy.id}`);
+                              const hp = window.localStorage.getItem(`strategy_has_plan:${strategy.id}`);
+                              codeLocal = c ? JSON.parse(c) : null;
+                              planLocal = p ? JSON.parse(p) : null;
+                              // Prefer stable booleans if available
+                              if (hc || hp) {
+                                const hasC = hc === '1';
+                                const hasP = hp === '1';
+                                if (hasC && hasP) labelOverride = 'DUAL';
+                                else if (hasP) labelOverride = 'MANUAL';
+                                else if (hasC) labelOverride = 'AUTOMATED';
+                              }
+                            }
+                          } catch {}
+                          const rawCode = String(codeLocal || strategy.generated_code || strategy.code || '');
+                          const rawPlan = String(planLocal || strategy.manual_trading_plan || strategy.trading_plan || '');
+                          const hasPlan = !!rawPlan.trim().length;
+                          const codeFenced = /```[a-zA-Z0-9_\-\.\s]*\n([\s\S]*?)```/.test(rawCode);
+                          const codeTokens = /(OnInit\s*\(|OnTick\s*\(|#property|input\s+|strategy\s*\(|\/\/@version)/i.test(rawCode);
+                          const hasCode = !!(codeFenced || codeTokens);
+                          const isDual = hasPlan && hasCode;
+                          const fallbackType = strategy.strategy_type === 'manual' ? 'manual' : 'automated';
+                          const computed = isDual ? 'DUAL' : (hasPlan ? 'manual' : (hasCode ? 'automated' : fallbackType));
+                          const label = (labelOverride && (labelOverride === 'DUAL' || labelOverride === 'MANUAL' || labelOverride === 'AUTOMATED'))
+                            ? (labelOverride === 'DUAL' ? 'DUAL' : labelOverride.toLowerCase())
+                            : computed;
+                          return (
+                            <span className="inline-flex items-center justify-center rounded-md border px-2 py-0.5 font-medium w-fit whitespace-nowrap shrink-0 [&>svg]:size-3 gap-1 [&>svg]:pointer-events-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive transition-[color,box-shadow] overflow-hidden text-foreground text-[10px] h-5">
+                              {label}
+                            </span>
+                          );
+                        })()}
                       </div>
                       <CardTitle className="text-base mb-1">
                         {strategy.strategy_name || 'Untitled Strategy'}
@@ -316,11 +402,13 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
               </div>
               
               <h3 className="text-xl font-bold text-white mb-2">
-                Monthly Quota Reached
+                {tier === 'free' ? 'Free Plan Limit Reached' : 'Monthly Quota Reached'}
               </h3>
               
               <p className="text-gray-200 mb-6">
-                You've hit your limit for this month. Unlock <strong>unlimited strategy creations</strong> and advanced features with the Elite plan.
+                {tier === 'free'
+                  ? "You've reached your free plan limit. Upgrade to create more strategies and unlock advanced features."
+                  : "You've hit your limit for this month. Unlock unlimited strategy creations and advanced features with the Elite plan."}
               </p>
               
               <Button 

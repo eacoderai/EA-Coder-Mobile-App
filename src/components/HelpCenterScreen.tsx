@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Search, Play, HelpCircle, ChevronRight, FileText, Send, ExternalLink, ArrowLeft } from "lucide-react";
+import { Search, Play, HelpCircle, ChevronRight, FileText, Send, ExternalLink } from "lucide-react";
 import { Button } from "./ui/button";
+import { Header } from "./Header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { Input } from "./ui/input";
@@ -19,7 +20,7 @@ const FAQ_DATA = [
   {
     category: "General",
     questions: [
-      { q: "What is EA Coder?", a: "EA Coder is an AI-powered assistant that helps you generate, analyze, and convert trading strategies for platforms like MetaTrader 4, MetaTrader 5, and TradingView." },
+      { q: "What is EACoder AI?", a: "EACoder AI is an AI-powered assistant that helps you generate, analyze, and convert trading strategies for platforms like MetaTrader 4, MetaTrader 5, and TradingView." },
       { q: "Is it free to use?", a: "We offer a Free plan with limited generations. For unlimited access and advanced features, you can upgrade to Pro or Elite plans." },
     ]
   },
@@ -56,7 +57,7 @@ const CONTEXT_HELP: Record<string, { title: string; content: string }> = {
 };
 
 const VIDEO_TUTORIALS = [
-  { id: 1, title: "Getting Started with EA Coder", duration: "3:45", thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg" }, // Placeholder ID
+  { id: 1, title: "Getting Started with EACoder AI", duration: "3:45", thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg" }, // Placeholder ID
   { id: 2, title: "How to Create a Profitable Strategy", duration: "5:20", thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg" },
   { id: 3, title: "Using the Code Converter", duration: "2:15", thumbnail: "https://img.youtube.com/vi/dQw4w9WgXcQ/mqdefault.jpg" },
 ];
@@ -141,32 +142,13 @@ export function HelpCenterScreen({ onNavigate, activeTab = "home" }: HelpCenterS
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-background flex flex-col text-foreground">
-      {/* Header */}
-      <div 
-        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white border-b border-border shadow-md"
-        style={{ borderBottomLeftRadius: '30px', borderBottomRightRadius: '30px' }}
-      >
-        <div className="app-container px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10 rounded-full hover:bg-white/20 text-white hover:text-white"
-              onClick={() => onNavigate(activeTab === 'home' ? 'home' : activeTab)} // Go back to where we came from
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/20 rounded-full text-white backdrop-blur-sm">
-                <HelpCircle className="w-5 h-5" />
-              </div>
-              <h1 className="text-xl font-bold tracking-tight">
-                Help Center
-              </h1>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Header
+        title="Help Center"
+        onBack={() => onNavigate(activeTab === 'home' ? 'home' : activeTab)}
+        leadingIcon={<HelpCircle className="w-5 h-5 text-white" />}
+        paddingClassName="p-4"
+        borderClassName="border-b border-border shadow-md"
+      />
 
       <div className="app-container flex-1 flex flex-col overflow-hidden min-h-0">
         <Tabs defaultValue="context" className="flex-1 flex flex-col min-h-0 h-full">

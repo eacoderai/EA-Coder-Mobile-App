@@ -5,7 +5,7 @@ const useDevServer = !!devServerUrl;
 
 const config: CapacitorConfig = {
   appId: 'com.eacoder.app',
-  appName: 'EA Coder',
+  appName: 'EACoder AI',
   webDir: 'dist',
   server: useDevServer
     ? {

@@ -18,4 +18,3 @@ describe('Codegen prompt includes attribution requirements', () => {
     expect(user.includes('link = "eacoderai.com"')).toBe(true);
   });
 });
-

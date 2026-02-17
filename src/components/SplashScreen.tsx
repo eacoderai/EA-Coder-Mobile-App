@@ -4,19 +4,22 @@ import logoImage from "../assets/1525789d760b07ee395e05af9b06d7202ebb7883.png";
 
 interface SplashScreenProps {
   onComplete: () => void;
+  ready?: boolean;
 }
 
-export function SplashScreen({ onComplete }: SplashScreenProps) {
+export function SplashScreen({ onComplete, ready = true }: SplashScreenProps) {
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
+    if (!ready) return;
+
     const timer = setTimeout(() => {
       setIsExiting(true);
       setTimeout(onComplete, 500);
-    }, 2500);
+    }, 1500);
 
     return () => clearTimeout(timer);
-  }, [onComplete]);
+  }, [onComplete, ready]);
 
   return (
     <motion.div
@@ -69,7 +72,7 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
           >
             <img
               src={logoImage}
-              alt="EA Coder Logo"
+              alt="EACoder AI Logo"
               className="w-48 h-50 drop-shadow-2xl"
             />
           </motion.div>
@@ -82,14 +85,14 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
           transition={{ delay: 0.5, duration: 0.6 }}
           className="mt-8 text-center"
         >
-          <h1 className="text-4xl text-white mb-2">EA Coder</h1>
+          <h1 className="text-4xl text-white mb-2">EACoder AI</h1>
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.8, duration: 0.6 }}
             className="text-blue-100 text-sm"
           >
-            AI-Powered Expert Advisor Generator
+            Your AI Trading Assistant 🤖
           </motion.p>
         </motion.div>
 

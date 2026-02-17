@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "./ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
 import { Badge } from "./ui/badge";
-import { ArrowLeft, Copy, Download, MessageSquare, CheckCircle2, Loader2, AlertCircle, RefreshCw, BarChart3, Lock } from "lucide-react";
+import { ArrowLeft, Copy, Download, MessageSquare, CheckCircle2, Loader2, AlertCircle, RefreshCw, BarChart3, Lock, Code2, FileText } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
+import { Switch } from "./ui/switch";
+import { Label } from "./ui/label";
 import { projectId } from '../utils/supabase/info';
 import { toast } from "../utils/tieredToast";
 import { trackEvent } from "../utils/analytics";
@@ -19,8 +21,9 @@ interface CodeResultScreenProps {
   onGenerationCount: (kind: 'code' | 'analysis') => void;
 }
 
-import { addLocalNotification } from '../utils/notifications';
+// removed unused addLocalNotification import
 import { MAJOR_PAIRS, MULTI_CURRENCY_LABEL } from '../utils/backtestPayload';
+import { Header } from "./Header";
 export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUser, remainingGenerations, onGenerationCount }: CodeResultScreenProps) {
   const [strategy, setStrategy] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,15 +32,30 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
   const [proRequired, setProRequired] = useState(false);
   const [usage, setUsage] = useState<{ count: number; remaining: number; window: string } | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  const [showGeneratedCode, setShowGeneratedCode] = useState(false);
   const readLocal = (key: string) => { try { const s = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null; return s ? JSON.parse(s) : null; } catch { return null; } };
 
+  const isManual = strategy?.strategy_type === 'manual';
   const statusNow = strategy?.status;
-  const rawCode = statusNow === 'pending' || statusNow === 'generating' ? '' : (strategy?.code || strategy?.generated_code || '');
+  const rawCode = String(strategy?.generated_code || strategy?.code || '');
+  const rawPlan = String(strategy?.manual_trading_plan || strategy?.trading_plan || '');
+  
   const hasErrorMarker = /Error generating code|Debug Information|Rate limit exceeded|Model not found/i.test(String(rawCode));
   const fenced = String(hasErrorMarker ? '' : rawCode);
   const m = fenced.match(/```[a-zA-Z0-9_\-\.\s]*\n([\s\S]*?)```/);
-  const codeText = statusNow === 'pending' || statusNow === 'generating' ? 'Generating...' : ((m ? m[1].trim() : fenced.trim()) || '// No code generated');
+  const codeCandidate = (m && m[1] ? m[1] : fenced).trim();
+  const codeHeuristic = /(OnInit\s*\(|OnTick\s*\(|#property|input\s+|strategy\s*\(|\/\/@version)/i.test(fenced);
+  const planHeuristic = /(Entry|Exit|Risk|Psychology|Stop\s*Loss|Take\s*Profit|Rules|Management)/i.test(codeCandidate) || (codeCandidate.split('\n').filter((l) => l.trim().startsWith('- ')).length >= 3);
+  const hasCodeDual = isManual ? !!(m || codeHeuristic) : !!fenced.trim().length;
+  
+  const showPlanView = !showGeneratedCode;
+  const hasPlan = String(rawPlan || '').trim().length > 0;
+  const planContent = String(rawPlan || '').trim();
+  const contentToDisplay = showPlanView ? planContent : (m ? m[1].trim() : fenced.trim());
+  const codeText = statusNow === 'pending' || statusNow === 'generating' ? 'Generating...' : (contentToDisplay || '');
+  
   const codeBoxHeights = 'h-[300px]';
+  const showInlineActions = true;
 
   // Local guard to prevent duplicate auto-analysis triggers from multiple screens
   const analysisFlagKey = (id: string) => `analysis_started:${id}`;
@@ -70,20 +88,35 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
     }
   };
 
+  const statusRef = useRef<string | undefined>(undefined);
+  useEffect(() => { statusRef.current = strategy?.status; }, [strategy?.status]);
+
   useEffect(() => {
     loadStrategy();
     fetchUsage();
     const interval = setInterval(() => {
-      if (strategy?.status === 'pending' || strategy?.status === 'generating') {
+      const s = statusRef.current;
+      if (s === 'pending' || s === 'generating') {
         loadStrategy();
       }
-    }, 3000);
-    
+    }, 8000);
     return () => clearInterval(interval);
-  }, [strategyId, strategy?.status]);
+  }, [strategyId]);
+
+  // Optional hint to force a tab on entry
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const hint = window.localStorage.getItem('result:show');
+      if (hint === 'code') setShowGeneratedCode(true);
+      if (hint === 'plan') setShowGeneratedCode(false);
+      if (hint) window.localStorage.removeItem('result:show');
+    } catch {}
+  }, []);
 
   useEffect(() => {
     const key = `strategy_code:${strategyId}`;
+    const keyPlan = `strategy_plan:${strategyId}`;
     const handler = (e: StorageEvent) => {
       if (e.key === key) {
         try {
@@ -93,9 +126,59 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
           }
         } catch {}
       }
+      if (e.key === keyPlan) {
+        try {
+          const nextPlan = e.newValue ? JSON.parse(e.newValue) : null;
+          if (nextPlan && typeof nextPlan === 'string') {
+            setStrategy((prev: any) => prev ? { ...prev, manual_trading_plan: nextPlan } : prev);
+          }
+        } catch {}
+      }
     };
     if (typeof window !== 'undefined') window.addEventListener('storage', handler);
     return () => { if (typeof window !== 'undefined') window.removeEventListener('storage', handler); };
+  }, [strategyId]);
+
+  // Keep lastSelectedStrategyId fresh on this screen and timestamp it
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined' && strategyId) {
+        window.localStorage.setItem('lastSelectedStrategyId', JSON.stringify(strategyId));
+        window.localStorage.setItem('lastSelectedStrategyAt', String(Date.now()));
+      }
+    } catch {}
+  }, [strategyId]);
+
+  // If ever rendered without a strategyId (future-proof), clear stale local storage every 30s
+  useEffect(() => {
+    if (strategyId) return;
+    const iv = setInterval(() => {
+      try {
+        if (typeof window === 'undefined') return;
+        const lastAt = Number(window.localStorage.getItem('lastSelectedStrategyAt') || '0');
+        if (!lastAt) return;
+        const elapsed = Date.now() - lastAt;
+        if (elapsed >= 30000) {
+          window.localStorage.removeItem('lastSelectedStrategyId');
+          window.localStorage.removeItem('lastSelectedStrategyAt');
+        }
+      } catch {}
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [strategyId]);
+
+  useEffect(() => {
+    if (strategyId) return;
+    try {
+      if (typeof window === 'undefined') return;
+      const lastAt = Number(window.localStorage.getItem('lastSelectedStrategyAt') || '0');
+      if (!lastAt) return;
+      const elapsed = Date.now() - lastAt;
+      if (elapsed >= 30000) {
+        window.localStorage.removeItem('lastSelectedStrategyId');
+        window.localStorage.removeItem('lastSelectedStrategyAt');
+      }
+    } catch {}
   }, [strategyId]);
 
   useEffect(() => {
@@ -142,11 +225,53 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
       if (response.ok) {
         const data = await response.json();
         const localCode = readLocal(`strategy_code:${strategyId}`);
-        if (localCode && typeof localCode === 'string') {
-          setStrategy({ ...data, code: localCode });
-        } else {
-          setStrategy(data);
-        }
+        const localPlan = readLocal(`strategy_plan:${strategyId}`);
+        let next = localCode && typeof localCode === 'string' ? { ...data, code: localCode } : data;
+        if (localPlan && typeof localPlan === 'string') next = { ...next, manual_trading_plan: localPlan };
+        setStrategy((prev: any) => {
+          const nextHasPlan = !!String(next?.manual_trading_plan || next?.trading_plan || '').trim().length;
+          const nextHasCode = !!String(next?.generated_code || next?.code || '').trim().length;
+          let merged: any = { ...next };
+          if (!nextHasPlan && nextHasCode) {
+            const candidate = String(next?.generated_code || next?.code || '');
+            const looksLikeCode = /(OnInit\s*\(|OnTick\s*\(|#property|input\s+|strategy\s*\(|\/\/@version)/i.test(candidate);
+            const looksLikePlan = /(Entry|Exit|Risk|Psychology|Stop\s*Loss|Take\s*Profit|Rules|Management)/i.test(candidate) || (candidate.split('\n').filter((l) => l.trim().startsWith('- ')).length >= 3);
+            const isManualNext = String(next?.strategy_type || next?.platform || '').toLowerCase().includes('manual');
+            if (!looksLikeCode && looksLikePlan) {
+              merged = { ...merged, manual_trading_plan: candidate };
+              if (isManualNext) {
+                delete merged.generated_code;
+                delete merged.code;
+              }
+            }
+          }
+          if (!nextHasPlan && prev) {
+            const prevPlan = String(prev?.manual_trading_plan || prev?.trading_plan || '').trim();
+            if (prevPlan) merged = { ...merged, manual_trading_plan: prevPlan };
+          }
+          if (!nextHasCode && prev) {
+            const prevCode = String(prev?.generated_code || prev?.code || '').trim();
+            if (prevCode) merged = { ...merged, code: prevCode };
+          }
+          // Ensure manual strategies do not treat plan-like text as code: clear misleading code content
+          try {
+            const isManualMerged = String(merged?.strategy_type || merged?.platform || '').toLowerCase().includes('manual');
+            if (isManualMerged) {
+              const planText2 = String(merged?.manual_trading_plan || merged?.trading_plan || '').trim();
+              const codeText2 = String(merged?.generated_code || merged?.code || '').trim();
+              if (codeText2) {
+                const codeFenced2 = /```[a-zA-Z0-9_\-\.\s]*\n([\s\S]*?)```/.test(codeText2);
+                const codeTokens2 = /(OnInit\s*\(|OnTick\s*\(|#property|input\s+|strategy\s*\(|\/\/@version)/i.test(codeText2);
+                const planLike2 = /(Entry|Exit|Risk|Psychology|Stop\s*Loss|Take\s*Profit|Rules|Management)/i.test(codeText2) || (codeText2.split('\n').filter((l) => l.trim().startsWith('- ')).length >= 3);
+                if (!codeFenced2 && !codeTokens2 && (planText2 || planLike2)) {
+                  delete merged.generated_code;
+                  delete merged.code;
+                }
+              }
+            }
+          } catch {}
+          return merged;
+        });
       } else {
         const contentType = response.headers.get('content-type') || '';
         const errorText = await response.text();
@@ -230,6 +355,28 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategyId, strategy]);
 
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      if (strategyId && strategy) {
+        const codeVal = String(strategy?.generated_code || strategy?.code || '').trim();
+        const planVal = String(strategy?.manual_trading_plan || strategy?.trading_plan || '').trim();
+        if (codeVal) window.localStorage.setItem(`strategy_code:${strategyId}`, JSON.stringify(codeVal));
+        if (planVal) window.localStorage.setItem(`strategy_plan:${strategyId}`, JSON.stringify(planVal));
+        const hasPlanLocal = !!planVal.length;
+        const codeFencedLocal = /```[a-zA-Z0-9_\-\.\s]*\n([\s\S]*?)```/.test(codeVal);
+        const codeTokensLocal = /(OnInit\s*\(|OnTick\s*\(|#property|input\s+|strategy\s*\(|\/\/@version)/i.test(codeVal);
+        const hasCodeLocal = !!(codeFencedLocal || codeTokensLocal);
+        const isDualLocal = hasPlanLocal && hasCodeLocal;
+        const fallbackTypeLocal = isManual ? 'MANUAL' : 'AUTOMATED';
+        const labelLocal = isDualLocal ? 'DUAL' : (hasPlanLocal ? 'MANUAL' : (hasCodeLocal ? 'AUTOMATED' : fallbackTypeLocal));
+        window.localStorage.setItem(`strategy_label:${strategyId}`, labelLocal);
+        window.localStorage.setItem(`strategy_has_code:${strategyId}`, hasCodeLocal ? '1' : '0');
+        window.localStorage.setItem(`strategy_has_plan:${strategyId}`, hasPlanLocal ? '1' : '0');
+      }
+    } catch {}
+  }, [strategyId, strategy?.generated_code, strategy?.code, strategy?.manual_trading_plan, strategy?.trading_plan]);
+
   const copyCode = () => {
     const codeText = strategy?.generated_code || strategy?.code;
     if (codeText) {
@@ -266,7 +413,11 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
     toast.success(`Downloaded ${filename}`);
   };
 
-  const isManual = strategy?.strategy_type === 'manual';
+  useEffect(() => {
+    if (strategy?.status === 'generated' && !isManual) {
+      setShowGeneratedCode(true);
+    }
+  }, [strategy?.status, isManual]);
 
   useEffect(() => {
     if (strategy?.status === 'generated' && isManual) {
@@ -279,11 +430,43 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
   }, [strategy?.status, isManual, strategy?.id]);
 
   const handleAutomate = () => {
-    if (!isProUser) {
-      onNavigate('subscription');
-      return;
+    console.log('[CodeResult] handleAutomate triggered for strategyId:', strategyId);
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('reset-indicators-on-new-strategy', '1');
+        try {
+          const snap = {
+            strategy_name: strategy?.strategy_name || '',
+            description: strategy?.description || '',
+            risk_management: strategy?.risk_management || '',
+            platform: strategy?.platform || '',
+            indicators: Array.isArray(strategy?.indicators) ? strategy.indicators : [],
+            instrument: strategy?.instrument || '',
+            analysis_instrument: strategy?.analysis_instrument || '',
+            strategy_type: strategy?.strategy_type || ''
+          };
+          window.localStorage.setItem(`strategy_snapshot:${strategyId}`, JSON.stringify(snap));
+        } catch {}
+        // If code already exists, stay on this screen and show code tab
+        const possibleCode = String(strategy?.generated_code || strategy?.code || '');
+        const hasFenced = /```/.test(possibleCode);
+        const hasCode = isManual ? hasFenced : !!(strategy?.generated_code || strategy?.code);
+        if (hasCode) {
+          window.localStorage.setItem('result:show', 'code');
+          setShowGeneratedCode(true);
+          return;
+        }
+        window.localStorage.setItem('submit:targetType', 'automated');
+        window.localStorage.setItem('submit:initId', String(strategyId));
+      }
+    } catch (e) {
+      console.error('[CodeResult] Failed to set localStorage flags', e);
     }
-    onNavigate('submit', strategyId);
+    // Navigate to submit only if we need to create/generate code
+    const possibleCode = String(strategy?.generated_code || strategy?.code || '');
+    const hasFenced = /```/.test(possibleCode);
+    const hasCode = isManual ? hasFenced : !!(strategy?.generated_code || strategy?.code);
+    if (!hasCode) onNavigate('submit', strategyId);
   };
 
   const renderManualPlan = (text: string) => {
@@ -427,8 +610,8 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <div className="text-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center flex flex-col items-center">
           <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-gray-600 dark:text-gray-400">Loading strategy...</p>
         </div>
@@ -467,55 +650,54 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 pb-10 sticky top-0 z-10">
-        <div className="max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl xl:max-w-3xl mx-auto flex items-center justify-between">
-          <div className="flex items-center flex-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onNavigate('home')}
-              className="mr-3"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <h1 className="text-lg text-gray-900 dark:text-white">
-                {strategy.strategy_name || 'Strategy'}
-              </h1>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-xs">
-                  {strategy.platform.toUpperCase()}
+      <Header
+        title={strategy.strategy_name || 'Strategy'}
+        onBack={() => onNavigate('home')}
+        bgClassName="bg-gradient-to-r from-blue-600 to-blue-800"
+        textClassName="text-white"
+        borderClassName=""
+        paddingClassName="p-4 pb-10"
+        rightContent={
+          <div className="flex items-center gap-2">
+            {(() => {
+              const hasPlan = !!String(strategy?.manual_trading_plan || strategy?.trading_plan || '').trim().length;
+              const hasCode = hasCodeDual;
+              const isDual = !!(hasPlan && hasCode);
+              const fallbackType = isManual ? 'MANUAL' : 'AUTOMATED';
+              const label = isDual ? 'DUAL' : (hasPlan ? 'MANUAL' : (hasCode ? 'AUTOMATED' : fallbackType));
+              return (
+                <Badge variant={isDual ? "default" : "outline"} className="text-xs">
+                  {label}
                 </Badge>
-                {(strategy.status === 'generated' || strategy.status === 'completed') && (
-                  <Badge variant="default" className="text-xs">
-                    <CheckCircle2 className="w-3 h-3 mr-1" />
-                    Ready
-                  </Badge>
-                )}
-                {(strategy.status === 'pending' || strategy.status === 'generating') && (
-                  <Badge variant="secondary" className="text-xs">
-                    <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                    Generating
-                  </Badge>
-                )}
-                {strategy.status === 'error' && (
-                  <Badge variant="destructive" className="text-xs">
-                    <AlertCircle className="w-3 h-3 mr-1" />
-                    Failed
-                  </Badge>
-                )}
-              </div>
-            </div>
+              );
+            })()}
+            {(strategy.status === 'generated' || strategy.status === 'completed') && (
+              <Badge variant="default" className="text-xs">
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                Ready
+              </Badge>
+            )}
+            {(strategy.status === 'pending' || strategy.status === 'generating') && (
+              <Badge variant="secondary" className="text-xs">
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                Generating
+              </Badge>
+            )}
+            {strategy.status === 'error' && (
+              <Badge variant="destructive" className="text-xs">
+                <AlertCircle className="w-3 h-3 mr-1" />
+                Failed
+              </Badge>
+            )}
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Content */}
         <div className="app-container flex-1 px-[9px] py-4 safe-nav-pad space-y-8">
         {/* Strategy Description */}
-        <Card style={glassCardStyle} className="mt-8 mb-8">
-          <CardHeader>
+        <Card style={glassCardStyle} className="mt-8 mb-4">
+          <CardHeader className="pb-3">
             <CardTitle className="text-base">Strategy Description</CardTitle>
           </CardHeader>
           <CardContent>
@@ -532,6 +714,41 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
             )}
           </CardContent>
         </Card>
+
+        {/* Segmented Toggle for Manual/Generated */}
+        {
+          <div 
+            className="flex p-1 bg-gray-100 dark:bg-gray-800/50 mb-4 border border-gray-200/50 dark:border-gray-700/50"
+            style={{ borderRadius: '30px' }}
+          >
+            <button
+              type="button"
+              onClick={() => setShowGeneratedCode(false)}
+              className={`flex-1 py-2 px-4 text-sm font-medium transition-all duration-200 ${
+                !showGeneratedCode
+                  ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+              }`}
+              style={{ borderRadius: '30px' }}
+            >
+              Trading Plan
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowGeneratedCode(true);
+              }}
+              className={`flex-1 py-2 px-4 text-sm font-medium transition-all duration-200 ${
+                showGeneratedCode
+                  ? "bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200"
+              }`}
+              style={{ borderRadius: '30px' }}
+            >
+              Generated Code
+            </button>
+          </div>
+        }
 
         {strategy.status === 'pending' && (
           <Card style={glassCardStyle} className="mb-8">
@@ -568,7 +785,17 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
                   {isRetrying ? 'Retrying...' : 'Retry Generation'}
                 </Button>
                 <Button
-                  onClick={() => onNavigate('submit')}
+                  onClick={() => {
+                    try {
+                      if (typeof window !== 'undefined') {
+                        window.localStorage.setItem('reset-indicators-on-new-strategy', '1');
+                        window.localStorage.removeItem('submit:targetType');
+                        window.localStorage.removeItem('submit:initId');
+                        window.localStorage.removeItem('lastSelectedStrategyId');
+                      }
+                    } catch {}
+                    onNavigate('submit');
+                  }}
                   variant="outline"
                   className="h-9 px-4 py-2.5 flex-1 sm:flex-none min-w-0"
                 >
@@ -583,56 +810,155 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-base">{isManual ? 'Trading Plan' : 'Generated Code'}</CardTitle>
+                <CardTitle className="text-base">{showPlanView ? 'Trading Plan' : 'Generated Code'}</CardTitle>
                 <CardDescription>
-                  {strategy.status === 'pending' || strategy.status === 'generating' 
-                    ? (isManual ? 'Creating your plan...' : 'Generating code...') 
-                    : (isManual ? 'Structured Manual Trading Plan' : `Production-ready ${strategy.platform.toUpperCase()} code`)}
+                  {strategy.status === 'pending' || strategy.status === 'generating'
+                    ? (showPlanView ? 'Creating your plan...' : 'Generating code...')
+                    : (showPlanView 
+                      ? (isManual ? 'Structured Manual Trading Plan' : 'Structured Trading Plan') 
+                      : `Production-ready ${String(strategy.platform || '').toUpperCase()} code`)}
                 </CardDescription>
               </div>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={copyCode} disabled={strategy.status === 'pending' || strategy.status === 'generating'}>
-                  <Copy className="w-4 h-4" />
-                  <span className="ml-2 hidden sm:inline">{isManual ? 'Copy Plan' : 'Copy Code'}</span>
-                </Button>
-                {!isManual && (
-                  <Button size="sm" variant="outline" onClick={downloadCode} disabled={strategy.status === 'pending' || strategy.status === 'generating'}>
-                    <Download className="w-4 h-4" />
+              <div className="flex items-center gap-4">
+                <div className="flex gap-2">
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => {
+                      const text = showPlanView ? (rawPlan || '') : (strategy?.generated_code || strategy?.code || '');
+                      if (text) {
+                        navigator.clipboard.writeText(text);
+                        toast.success(showPlanView ? "Plan copied to clipboard!" : "Code copied to clipboard!");
+                      }
+                    }} 
+                    disabled={(strategy.status === 'pending' || strategy.status === 'generating') || (showPlanView && !planContent)}
+                  >
+                    <Copy className="w-4 h-4" />
+                    <span className="ml-2 hidden sm:inline">{showPlanView ? 'Copy Plan' : 'Copy Code'}</span>
                   </Button>
-                )}
+                  {(showGeneratedCode) && (
+                    <Button size="sm" variant="outline" onClick={downloadCode} disabled={strategy.status === 'pending' || strategy.status === 'generating'}>
+                      <Download className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <ScrollArea className={`${isManual ? 'h-[500px]' : codeBoxHeights} w-full rounded-md border border-gray-200 dark:border-gray-700 ${isManual ? 'bg-white/50 dark:bg-black/20 p-4' : ''}`}>
-              {isManual ? (
-                <div className="prose dark:prose-invert max-w-none">
-                  {renderManualPlan(codeText)}
-                </div>
+            <ScrollArea className={`${(showGeneratedCode) ? codeBoxHeights : ''} w-full rounded-md border border-gray-200 dark:border-gray-700 ${(showPlanView) ? 'bg-white/50 dark:bg-black/20 p-4' : ''}`}>
+              {showPlanView ? (
+                planContent ? (
+                  <div className="prose dark:prose-invert max-w-none">
+                    {renderManualPlan(planContent)}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center w-full min-h-[300px] text-center pt-16 pb-10">
+                    <FileText className="w-10 h-10 text-blue-500 mb-3" />
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                      {isManual ? 'No manual trading plan yet' : 'No trading plan generated yet for this automated strategy'}
+                    </p>
+                    <Button 
+                      onClick={() => {
+                        if (hasPlan) {
+                          try { if (typeof window !== 'undefined') window.localStorage.setItem('result:show', 'plan'); } catch {}
+                          setShowGeneratedCode(false);
+                          return;
+                        }
+                        try { 
+                          if (typeof window !== 'undefined') {
+                            window.localStorage.setItem('submit:targetType', 'manual');
+                            window.localStorage.setItem('submit:initId', String(strategyId));
+                            window.localStorage.setItem('result:show', 'plan');
+                            try {
+                              const snap = {
+                                strategy_name: strategy?.strategy_name || '',
+                                description: strategy?.description || '',
+                                risk_management: strategy?.risk_management || '',
+                                platform: strategy?.platform || '',
+                                indicators: Array.isArray(strategy?.indicators) ? strategy.indicators : [],
+                                instrument: strategy?.instrument || '',
+                                analysis_instrument: strategy?.analysis_instrument || '',
+                                strategy_type: strategy?.strategy_type || ''
+                              };
+                              window.localStorage.setItem(`strategy_snapshot:${strategyId}`, JSON.stringify(snap));
+                            } catch {}
+                          }
+                        } catch {}
+                        onNavigate('submit', strategyId);
+                      }} 
+                      className="bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 text-white"
+                    >
+                      <span className="px-4">Generate Trading Plan</span>
+                    </Button>
+                  </div>
+                )
               ) : (
-                <pre className="p-4 text-xs max-w-full overflow-x-auto">
-                  <code className="text-gray-800 dark:text-gray-200 whitespace-pre">
-                    {codeText}
-                  </code>
-                </pre>
+                hasCodeDual ? (
+                  <pre className="p-4 text-xs max-w-full overflow-x-auto">
+                    <code className="text-gray-800 dark:text-gray-200 whitespace-pre">
+                      {codeText}
+                    </code>
+                  </pre>
+                ) : (
+                  isManual ? (
+                    <div className="flex flex-col items-center justify-center w-full min-h-[300px] text-center pt-16 pb-10">
+                      <FileText className="w-10 h-10 text-blue-500 mb-3" />
+                      <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                        No code generated yet for this manual strategy
+                      </p>
+                      <Button
+                        onClick={handleAutomate}
+                        disabled={strategy.status === 'pending' || strategy.status === 'generating'}
+                        className="bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 text-white"
+                      >
+                        <span className="px-4">Generate Code</span>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center w-full min-h-[300px] text-center pt-16 pb-10">
+                      <FileText className="w-10 h-10 text-blue-500 mb-3" />
+                      <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                        No code available
+                      </p>
+                    </div>
+                  )
+                )
               )}
             </ScrollArea>
           </CardContent>
         </Card>
 
+        {showInlineActions && (
+          <div className="mt-6 sm:mt-8 lg:mt-10 mb-6 sm:mb-8 space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => onNavigate('chat', strategyId)}
+                disabled={strategy.status === 'pending' || strategy.status === 'generating'}
+              >
+                <MessageSquare className="w-4 h-4 mr-2" />
+                Refine Code
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => onNavigate('analyze', strategyId)}
+                disabled={strategy.status === 'pending' || strategy.status === 'generating'}
+              >
+                <BarChart3 className="w-4 h-4 mr-2" />
+                View Analysis
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
+        {!showInlineActions && (
         <div className="grid grid-cols-2 gap-3 mb-8">
           {isManual ? (
-            <Button
-              variant="default"
-              className="col-span-2 w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg"
-              style={{ width: 'calc(100% - 8px)' }}
-              onClick={handleAutomate}
-              disabled={strategy.status === 'pending' || strategy.status === 'generating'}
-            >
-              {!isProUser && <Lock className="w-4 h-4 mr-2 opacity-80" />}
-              {isProUser ? 'Automate This Strategy' : 'Automate This Strategy (Pro)'}
-            </Button>
+            null
           ) : (
             <>
               <Button
@@ -658,14 +984,17 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
             </>
           )}
         </div>
+        )}
 
         {/* Instructions */}
         <Card style={glassCardStyle} className="mb-8">
           <CardHeader>
-            <CardTitle className="text-sm">{isManual ? 'How to Use This Plan' : 'How to Use This Code'}</CardTitle>
+            <CardTitle className="text-sm">
+              {showPlanView ? 'Trading Plan Instructions' : 'How to Use This Code'}
+            </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-gray-800 dark:text-gray-200 space-y-2">
-            {isManual ? (
+            {showPlanView ? (
               <>
                 <p>1. <strong>Review:</strong> Read through the Entry and Exit rules carefully.</p>
                 <p>2. <strong>Test:</strong> Open your chart and backtest these rules visually on historical data.</p>

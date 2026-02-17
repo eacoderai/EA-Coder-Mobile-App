@@ -65,6 +65,7 @@ import { addLocalNotification } from '../utils/notifications';
 import { apiFetch } from '../utils/api';
 import { buildBacktestPayload, MAJOR_PAIRS, THREE_YEARS_MS, MULTI_CURRENCY_LABEL } from '../utils/backtestPayload';
 import type { StrategyCreateRequest, StrategyCreateResponse } from '../types/analysis';
+import { Header } from "./Header";
 export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingGenerations, onGenerationCount, initialStrategyId }: SubmitStrategyScreenProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [generationAttempts, setGenerationAttempts] = useState(0);
@@ -104,6 +105,22 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
   const [strategiesCount, setStrategiesCount] = useState<number | null>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [showLimitBanner, setShowLimitBanner] = useState(false);
+  const [originalType, setOriginalType] = useState<'manual' | 'automated' | null>(null);
+  const [prefillId, setPrefillId] = useState<string | undefined>(initialStrategyId || undefined);
+  const [targetTypeHint, setTargetTypeHint] = useState<'manual' | 'automated' | null>(null);
+  const [lockedType, setLockedType] = useState<'manual' | 'automated' | null>(null);
+
+  // Lock the intended target tab immediately to avoid late flips after async fetch
+  useEffect(() => {
+    try {
+      if (typeof window === 'undefined') return;
+      const hint = window.localStorage.getItem('submit:targetType');
+      if (hint === 'manual' || hint === 'automated') {
+        setLockedType(hint as any);
+        setFormData(prev => ({ ...prev, strategyType: hint as any }));
+      }
+    } catch {}
+  }, []);
 
   // --- Backtesting helpers --- //
   // Use shared constant for default backtest window
@@ -515,24 +532,26 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
       const key = 'reset-indicators-on-new-strategy';
       const flag = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
       if (flag) {
+        console.log('[SubmitStrategy] Resetting indicators due to flag');
         setSelectedIndicators([]);
         setIndicatorMode('multiple');
         try { if (typeof window !== 'undefined') window.localStorage.removeItem('indicator.selection'); } catch {}
         try { if (typeof window !== 'undefined') window.localStorage.removeItem('indicator.mode'); } catch {}
         try { if (typeof window !== 'undefined') window.localStorage.removeItem(key); } catch {}
+      } else {
+        // Only load from localStorage if we are NOT resetting
+        const modeRaw = (() => { try { return typeof window !== 'undefined' ? window.localStorage.getItem('indicator.mode') : null; } catch { return null; } })();
+        const selRaw = (() => { try { return typeof window !== 'undefined' ? window.localStorage.getItem('indicator.selection') : null; } catch { return null; } })();
+        if (modeRaw === 'single' || modeRaw === 'multiple') setIndicatorMode(modeRaw as IndicatorMode);
+        if (selRaw) {
+          try {
+            const parsed = JSON.parse(selRaw);
+            if (Array.isArray(parsed)) setSelectedIndicators(parsed.filter(Boolean));
+          } catch {}
+        }
       }
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    const modeRaw = (() => { try { return typeof window !== 'undefined' ? window.localStorage.getItem('indicator.mode') : null; } catch { return null; } })();
-    const selRaw = (() => { try { return typeof window !== 'undefined' ? window.localStorage.getItem('indicator.selection') : null; } catch { return null; } })();
-    if (modeRaw === 'single' || modeRaw === 'multiple') setIndicatorMode(modeRaw as IndicatorMode);
-    if (selRaw) {
-      try {
-        const parsed = JSON.parse(selRaw);
-        if (Array.isArray(parsed)) setSelectedIndicators(parsed.filter(Boolean));
-      } catch {}
+    } catch (e) {
+      console.error('[SubmitStrategy] Error in indicator initialization', e);
     }
   }, []);
 
@@ -550,8 +569,22 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
     // Gate users based on tier limits
     const limit = TIER_LIMITS[tier].generations;
     const effectiveCount = (usage && typeof usage.count === 'number') ? usage.count : strategiesCount;
+    // Determine if this is an update to an existing strategy (PATCH) or a new one (POST)
+    const hasExistingId = (() => {
+      if (prefillId && prefillId !== 'button') return true;
+      if (initialStrategyId && initialStrategyId !== 'button') return true;
+      try {
+        if (typeof window !== 'undefined') {
+          const hinted = window.localStorage.getItem('submit:initId');
+          if (hinted && hinted !== 'button') return true;
+          const lastSel = window.localStorage.getItem('lastSelectedStrategyId');
+          if (lastSel) return true;
+        }
+      } catch {}
+      return false;
+    })();
 
-    if (limit !== Infinity && effectiveCount !== null && effectiveCount >= limit) {
+    if (!hasExistingId && limit !== Infinity && effectiveCount !== null && effectiveCount >= limit) {
       if (tier === 'free') {
         toast.error('Free limit reached — upgrade for more.', {
           audience: 'basic',
@@ -595,6 +628,9 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
       return;
     }
     
+    // Allow regenerating within the same type (manual↔manual or automated↔automated)
+    // We keep PATCH semantics to avoid creating a new card.
+    
     setIsLoading(true);
     setGenerationAttempts((n) => n + 1);
 
@@ -614,26 +650,57 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         indicator_mode: indicatorMode,
         strategy_type: formData.strategyType,
       };
+
+      // Use existing strategy when available to avoid creating a new card
+      let effectiveStrategyId: string | undefined = undefined;
+      if (prefillId && prefillId !== 'button') {
+        effectiveStrategyId = prefillId;
+      } else if (initialStrategyId && initialStrategyId !== 'button') {
+        effectiveStrategyId = initialStrategyId;
+      } else {
+        try {
+          if (typeof window !== 'undefined') {
+            const hinted = window.localStorage.getItem('submit:initId');
+            const lastSelected = (() => {
+              try {
+                const v = window.localStorage.getItem('lastSelectedStrategyId');
+                return v ? JSON.parse(v) : null;
+              } catch { return null; }
+            })();
+            if (hinted && hinted !== 'button') effectiveStrategyId = hinted;
+            else if (lastSelected && typeof lastSelected === 'string') effectiveStrategyId = lastSelected;
+          }
+        } catch {}
+      }
+
       console.log('[Generate] Request start', {
-        path: 'make-server-00a119be/strategies',
+        path: effectiveStrategyId ? `make-server-00a119be/strategies/${effectiveStrategyId}` : 'make-server-00a119be/strategies',
+        method: effectiveStrategyId ? 'PATCH' : 'POST',
         accessTokenPresent: !!accessToken,
-        accessTokenLength: accessToken?.length || 0,
-        accessTokenPreview: accessToken ? `${accessToken.substring(0, 20)}...` : 'null',
         payload,
       });
-      const data = await apiFetch<StrategyCreateResponse>('make-server-00a119be/strategies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload,
-        accessToken,
-        retries: 1,
-      });
+
+      const data = await apiFetch<StrategyCreateResponse>(
+        effectiveStrategyId 
+          ? `make-server-00a119be/strategies/${effectiveStrategyId}` 
+          : 'make-server-00a119be/strategies', 
+        {
+          method: effectiveStrategyId ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          accessToken,
+          retries: 1,
+        }
+      );
       console.log('[Generate] Parsed JSON', data);
+      
+      const strategyIdToUse = effectiveStrategyId || data.strategyId;
+
       // Count a code generation for basic users
       onGenerationCount('code');
 
       // Navigate to the code result screen with the generated strategy ID
-      toast.success("Strategy submitted. Generating code in background...");
+      toast.success(initialStrategyId ? "Strategy updated. Regenerating code..." : "Strategy submitted. Generating code in background...");
 
       // Trigger background analysis immediately (non-blocking) with robust retries/backoff
       try {
@@ -642,7 +709,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         // Construct strategy object for prompt generation
         const strategyForAnalysis = {
           ...payload,
-          strategyId: data.strategyId,
+          strategyId: strategyIdToUse,
           backtest_period: '3 Years',
           timeframe: 'H1'
         };
@@ -650,7 +717,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         const analysisPrompt = buildStrategyAnalysisPrompt(strategyForAnalysis as any);
 
         // localStorage guard to avoid duplicate triggers across screens
-        const flagKey = `analysis_started:${data.strategyId}`;
+        const flagKey = `analysis_started:${strategyIdToUse}`;
         const markStarted = () => {
           try { if (typeof window !== 'undefined') window.localStorage.setItem(flagKey, String(Date.now())); } catch {}
         };
@@ -661,15 +728,15 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         const attemptDelays = [0, 20000, 40000, 60000]; // much longer backoff to avoid timeout-induced retries
         const triggerAttempt = async (attempt: number) => {
           try {
-            console.log('[Analyze][Auto] Trigger attempt', { attempt, strategyId: data.strategyId });
+            console.log('[Analyze][Auto] Trigger attempt', { attempt, strategyId: strategyIdToUse });
             // Pass suppress_notification in both query and body for robustness
-            await apiFetch('make-server-00a119be/strategies/' + data.strategyId + '/reanalyze?suppress_notification=true', {
+            await apiFetch('make-server-00a119be/strategies/' + strategyIdToUse + '/reanalyze?suppress_notification=true', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: {
                 analysis_prompt: analysisPrompt,
                 strategy_context: {
-                  strategy_id: data.strategyId,
+                  strategy_id: strategyIdToUse,
                   strategy_name: payload.strategy_name,
                   description: payload.description,
                   risk_management: payload.risk_management,
@@ -706,7 +773,13 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         console.warn('[Analyze][Auto] Failed to schedule analysis', err);
       }
 
-      onNavigate('code', data.strategyId);
+      try {
+        if (typeof window !== 'undefined') {
+          const tab = formData.strategyType === 'manual' ? 'plan' : 'code';
+          window.localStorage.setItem('result:show', tab);
+        }
+      } catch {}
+      onNavigate('code', strategyIdToUse);
     } catch (error: any) {
       console.error('[Generate] Exception', { 
         message: error?.message, 
@@ -722,14 +795,20 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         // and maybe a generic message if there are many
         error.errors.forEach((err: string) => toast.error(err));
       } else if (error?.status === 403) {
+        const hasExistingId = !!(prefillId || initialStrategyId || (typeof window !== 'undefined' && window.localStorage.getItem('submit:initId')));
         const msg = 'You have reached your strategy creation limit. Upgrade to Pro for 10 generations or Elite for unlimited access.';
         toast.error(msg);
-        // Auto-redirect to subscription when free limit reached
-        setTimeout(() => onNavigate('subscription'), 1500);
+        // Only redirect to subscription when creating a brand new strategy (POST)
+        if (!hasExistingId) {
+          setTimeout(() => onNavigate('subscription'), 1500);
+        }
       } else if (typeof error?.message === 'string' && error.message.includes('Free tier limit reached — upgrade to continue')) {
         toast.error('Free tier limit reached. Redirecting to upgrades...');
         // Seamless redirect
-        setTimeout(() => onNavigate('subscription'), 1500);
+        const hasExistingId = !!(prefillId || initialStrategyId || (typeof window !== 'undefined' && window.localStorage.getItem('submit:initId')));
+        if (!hasExistingId) {
+          setTimeout(() => onNavigate('subscription'), 1500);
+        }
       } else {
         toast.error(error?.message || 'Failed to submit strategy');
       }
@@ -747,38 +826,119 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
   // Load initial strategy if provided (e.g. "Automate This Strategy" flow)
   useEffect(() => {
     async function loadInitialStrategy() {
-      if (!initialStrategyId || !accessToken) return;
+      console.log('[SubmitStrategy] useEffect triggered with initialStrategyId:', initialStrategyId);
+      if (!accessToken) {
+        console.log('[SubmitStrategy] Skipping load: accessToken missing');
+        return;
+      }
+
+      // Determine ID to load
+      let idToLoad: string | undefined = initialStrategyId || prefillId;
+      try {
+        if (!idToLoad && typeof window !== 'undefined') {
+          const hinted = window.localStorage.getItem('submit:initId');
+          if (hinted && hinted !== 'button') idToLoad = hinted;
+        }
+      } catch {}
+      if (!idToLoad || idToLoad === 'button') return;
 
       try {
-        const { data, error } = await supabase
-          .from('strategies')
-          .select('*')
-          .eq('id', initialStrategyId)
-          .single();
+        if (typeof window !== 'undefined') {
+          const snapRaw = window.localStorage.getItem(`strategy_snapshot:${idToLoad}`);
+          if (snapRaw) {
+            const snap = JSON.parse(snapRaw || '{}') || {};
+            const tHint = (() => {
+              const hint = window.localStorage.getItem('submit:targetType');
+              if (hint === 'manual' || hint === 'automated') return hint as any;
+              return null;
+            })();
+            const instrumentPrefill = MULTI_CURRENCY_LABEL;
+            setFormData(prev => ({
+              ...prev,
+              strategyName: snap.strategy_name || prev.strategyName,
+              description: snap.description || prev.description,
+              riskManagement: '',
+              instrument: instrumentPrefill,
+              strategyType: lockedType ?? (tHint || prev.strategyType),
+              platform: (snap.platform && snap.platform !== 'manual') ? snap.platform : prev.platform
+            }));
+            if (Array.isArray(snap.indicators)) {
+              const newInds = snap.indicators.map((label: string) => ({
+                id: `std:${String(label).toLowerCase()}`,
+                label: String(label),
+                custom: false
+              }));
+              setSelectedIndicators(newInds);
+              try { window.localStorage.setItem('indicator.selection', JSON.stringify(newInds)); } catch {}
+            }
+          }
+        }
+      } catch {}
 
-        if (error || !data) return;
+      try {
+        // Determine target type from navigation hint (manual|automated)
+        let targetType: 'manual' | 'automated' = 'automated';
+        try {
+          if (typeof window !== 'undefined') {
+            const hint = window.localStorage.getItem('submit:targetType');
+            if (hint === 'manual' || hint === 'automated') targetType = hint as any;
+            window.localStorage.removeItem('submit:targetType');
+            window.localStorage.removeItem('submit:initId');
+          }
+        } catch {}
 
+        console.log('[SubmitStrategy] Fetching initial strategy details via API...');
+        const data = await apiFetch('make-server-00a119be/strategies/' + idToLoad, { 
+          accessToken,
+          retries: 2
+        });
+
+        if (!data) {
+          console.error('[SubmitStrategy] No data returned for initial strategy');
+          return;
+        }
+
+        console.log('[SubmitStrategy] Successfully fetched initial strategy:', data.strategy_name);
+        setPrefillId(idToLoad);
+        try {
+          const t = (data?.strategy_type === 'manual' || data?.strategy_type === 'automated')
+            ? data.strategy_type
+            : (data?.platform === 'manual' ? 'manual' : 'automated');
+          setOriginalType(t);
+        } catch {}
+        setTargetTypeHint(targetType);
+        const instrumentPrefill = (() => {
+          if (targetType === 'manual') return MULTI_CURRENCY_LABEL;
+          const ai = String(data?.analysis_instrument || '').trim();
+          const inst = String(data?.instrument || '').trim();
+          if (!ai && !inst) return MULTI_CURRENCY_LABEL;
+          if (ai.includes(',') || inst.includes(',')) return MULTI_CURRENCY_LABEL;
+          return inst || ai || MULTI_CURRENCY_LABEL;
+        })();
         setFormData(prev => ({
           ...prev,
           strategyName: data.strategy_name || prev.strategyName,
           description: data.description || prev.description,
-          riskManagement: data.risk_management || prev.riskManagement,
-          instrument: data.instrument || prev.instrument,
-          // Force automated mode when pre-filling from an existing strategy (usually manual)
-          strategyType: 'automated',
+          riskManagement: '', // Leave blank; user can complete
+          instrument: instrumentPrefill,
+          // Honor target type from navigation
+          strategyType: lockedType ?? targetType,
           platform: (data.platform && data.platform !== 'manual') ? data.platform : prev.platform
         }));
 
         if (Array.isArray(data.indicators) && data.indicators.length > 0) {
+          console.log('[SubmitStrategy] Pre-filling indicators from initial strategy:', data.indicators);
           const newInds = data.indicators.map((label: string) => ({
             id: `std:${label.toLowerCase()}`,
             label,
             custom: false
           }));
           setSelectedIndicators(newInds);
+          // Also persist to localStorage so they are not lost on refresh
+          try { if (typeof window !== 'undefined') window.localStorage.setItem('indicator.selection', JSON.stringify(newInds)); } catch {}
         }
       } catch (err) {
-        console.warn('Failed to load initial strategy', err);
+        console.warn('[SubmitStrategy] Failed to load initial strategy', err);
       }
     }
     loadInitialStrategy();
@@ -797,26 +957,11 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <div 
-        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 pb-10 rounded-b-[30px] mb-4"
-        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
-      >
-        <div className="max-w-md sm:max-w-lg md:max-w-xl lg:max-w-2xl xl:max-w-3xl mx-auto flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onNavigate('home')}
-            className="mr-3 text-white hover:bg-white/10"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div>
-            <h1 className="text-lg font-semibold text-white">Submit Strategy</h1>
-            <p className="text-xs text-blue-100">Describe your trading idea</p>
-          </div>
-        </div>
-      </div>
+      <Header
+        title="Submit Strategy"
+        subtitle="Describe your trading idea"
+        onBack={() => onNavigate('home')}
+      />
 
       {/* Form */}
         <div className="app-container flex-1 px-[9px] py-4 safe-nav-pad">
@@ -863,25 +1008,53 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
               <div className="flex p-1 bg-gray-100 dark:bg-gray-800 rounded-[30px] mb-4" style={{ borderRadius: '30px' }}>
                   <button
                     type="button"
-                    onClick={() => setFormData({ ...formData, strategyType: 'manual' })}
+                    onClick={() => {
+                      const currentId = prefillId || initialStrategyId || (typeof window !== 'undefined' ? window.localStorage.getItem('submit:initId') || undefined : undefined);
+                      if (originalType === 'manual') {
+                        try { if (typeof window !== 'undefined') window.localStorage.setItem('result:show', 'plan'); } catch {}
+                        if (currentId) onNavigate('code', currentId);
+                        return;
+                      }
+                      if (targetTypeHint && targetTypeHint !== 'manual') {
+                        try { if (typeof window !== 'undefined') window.localStorage.setItem('result:show', originalType === 'manual' ? 'plan' : 'code'); } catch {}
+                        if (currentId) onNavigate('code', currentId);
+                        return;
+                      }
+                      setFormData({ ...formData, strategyType: 'manual' });
+                    }}
                     style={{ borderRadius: '30px' }}
                     className={`flex-1 py-2 px-4 text-sm font-medium transition-all duration-200 ${
                       formData.strategyType === 'manual'
                         ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
                         : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                    }`}
+                    } ${originalType === 'manual' ? 'opacity-60' : ''}`}
+                    aria-disabled={originalType === 'manual'}
                   >
                     Trade this manually
                   </button>
                   <button
                     type="button"
-                    onClick={() => setFormData({ ...formData, strategyType: 'automated' })}
+                    onClick={() => {
+                      const currentId = prefillId || initialStrategyId || (typeof window !== 'undefined' ? window.localStorage.getItem('submit:initId') || undefined : undefined);
+                      if (originalType === 'automated') {
+                        try { if (typeof window !== 'undefined') window.localStorage.setItem('result:show', 'code'); } catch {}
+                        if (currentId) onNavigate('code', currentId);
+                        return;
+                      }
+                      if (targetTypeHint && targetTypeHint !== 'automated') {
+                        try { if (typeof window !== 'undefined') window.localStorage.setItem('result:show', originalType === 'manual' ? 'plan' : 'code'); } catch {}
+                        if (currentId) onNavigate('code', currentId);
+                        return;
+                      }
+                      setFormData({ ...formData, strategyType: 'automated' });
+                    }}
                     style={{ borderRadius: '30px' }}
                     className={`flex-1 py-2 px-4 text-sm font-medium transition-all duration-200 ${
                       formData.strategyType === 'automated'
                         ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
                         : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                    }`}
+                    } ${originalType === 'automated' ? 'opacity-60' : ''}`}
+                    aria-disabled={originalType === 'automated'}
                   >
                     Automate this strategy
                   </button>

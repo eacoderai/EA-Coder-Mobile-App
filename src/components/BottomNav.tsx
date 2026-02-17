@@ -1,16 +1,18 @@
 import React from "react";
-import { Home, BarChart3, MessageSquare, RefreshCw, User } from "lucide-react";
+import { Home, BarChart3, MessageSquare, RefreshCw, User, LayoutDashboard } from "lucide-react";
 import { motion } from "motion/react";
 
 interface BottomNavProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  isEliteUser?: boolean;
 }
 
-export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+export function BottomNav({ activeTab, onTabChange, isEliteUser = false }: BottomNavProps) {
   const tabs = [
     { id: "home", label: "Home", icon: Home },
     { id: "analyze", label: "Analysis", icon: BarChart3 },
+    ...(isEliteUser ? [{ id: "journal", label: "Journal", icon: LayoutDashboard }] : []),
     { id: "chat", label: "Chat", icon: MessageSquare },
     { id: "convert", label: "Convert", icon: RefreshCw },
     { id: "profile", label: "Profile", icon: User },

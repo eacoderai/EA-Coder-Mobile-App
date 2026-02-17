@@ -107,7 +107,10 @@ export function SubscriptionScreen({ onNavigate, accessToken, onTierUpdated, ini
             let newTier: Tier = 'free';
             if (planVal === 'elite') newTier = 'elite';
             else if (planVal === 'pro' || planVal === 'premium') newTier = 'pro';
-            onTierUpdated(newTier);
+            // Only update if it's actually different to avoid cycles
+            if (newTier !== initialPlan) {
+              onTierUpdated(newTier);
+            }
         }
       }
     } catch (error) {
@@ -233,7 +236,7 @@ export function SubscriptionScreen({ onNavigate, accessToken, onTierUpdated, ini
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+      <div className="min-h-screen w-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
         <div className="app-container flex-1 px-[9px] py-6 safe-nav-pad">
           <div className="flex items-center justify-center py-20">
             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>

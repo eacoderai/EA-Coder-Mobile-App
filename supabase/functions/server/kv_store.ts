@@ -17,7 +17,7 @@ const deno: any = typeof Deno !== 'undefined' ? Deno : ((globalThis as any).Deno
 // In development, the server may not have service-role credentials available.
 // Provide a safe, in-memory fallback to avoid hard failures while clearly logging.
 const memoryStore: Map<string, any> = new Map();
-const isMemoryFallback = !deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || !deno.env.get("SUPABASE_URL");
+export const isMemoryFallback = !deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || !deno.env.get("SUPABASE_URL");
 
 const client = () => createClient(
   deno.env.get("SUPABASE_URL") || "",

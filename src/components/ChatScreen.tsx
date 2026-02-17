@@ -11,6 +11,7 @@ import { NotificationBell } from "./ui/NotificationBell";
 import { Textarea } from "./ui/textarea";
 import type { StrategyRecord } from '../types/analysis';
 import styles from './ChatInput.module.css';
+import { Header } from "./Header";
 
 interface Message {
   id: string;
@@ -28,6 +29,13 @@ interface ChatScreenProps {
 }
 
 export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, remainingGenerations }: ChatScreenProps) {
+  const sid: string | undefined = React.useMemo(() => {
+    if (strategyId) return strategyId;
+    try {
+      const s = typeof window !== 'undefined' ? window.localStorage.getItem('lastSelectedStrategyId') : null;
+      return s ? JSON.parse(s) : undefined;
+    } catch { return undefined; }
+  }, [strategyId]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -49,10 +57,10 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
   const [sendOffsetPx, setSendOffsetPx] = useState<number>(74);
   const [contentBottomPadPx, setContentBottomPadPx] = useState<number>(120);
   const storageKeys = useMemo(() => ({
-    strategy: strategyId ? `strategy:${strategyId}` : '',
-    code: strategyId ? `strategy_code:${strategyId}` : '',
-    versions: strategyId ? `strategy_code_versions:${strategyId}` : ''
-  }), [strategyId]);
+    strategy: sid ? `strategy:${sid}` : '',
+    code: sid ? `strategy_code:${sid}` : '',
+    versions: sid ? `strategy_code_versions:${sid}` : ''
+  }), [sid]);
 
   const computeDiff = (a: string, b: string) => {
     const al = a.split(/\r?\n/);
@@ -87,12 +95,12 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
   };
 
   const loadStrategyDetails = async () => {
-    if (!strategyId) return;
+    if (!sid) return;
     setIsCodeLoading(true);
     try {
       const cached = readLocal(storageKeys.strategy);
       if (cached) setStrategy(cached);
-      const res = await fetch(getFunctionUrl(`strategies/${strategyId}`), { headers: { 'Authorization': `Bearer ${accessToken || ''}` } });
+      const res = await fetch(getFunctionUrl(`strategies/${sid}`), { headers: { 'Authorization': `Bearer ${accessToken || ''}` } });
       if (res.ok) {
         const data = await res.json();
         setStrategy(data);
@@ -130,16 +138,16 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
       persistLocal(storageKeys.code, effectiveCode);
       persistLocal(storageKeys.versions, next);
       toast.success('Code saved');
-      if (!strategyId) return;
+      if (!sid) return;
       const body: any = { code: effectiveCode, message };
-      const urlA = getFunctionUrl(`strategies/${strategyId}/code`);
+      const urlA = getFunctionUrl(`strategies/${sid}/code`);
       const respA = await fetch(urlA, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${accessToken || ''}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       });
       if (!respA.ok && respA.status === 404) {
-        const urlB = `${functionsUrl}/strategies/${strategyId}/code`;
+        const urlB = `${functionsUrl}/strategies/${sid}/code`;
         await fetch(urlB, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${accessToken || ''}`, 'Content-Type': 'application/json' },
@@ -153,10 +161,10 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
     }
   };
   const checkAccess = async () => {
-    if (!strategyId) return;
+    if (!sid) return;
     try {
       const response = await fetch(
-        getFunctionUrl(`strategies/${strategyId}`),
+        getFunctionUrl(`strategies/${sid}`),
         { headers: { 'Authorization': `Bearer ${accessToken || ''}` } }
       );
       
@@ -168,10 +176,10 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
   };
 
   useEffect(() => {
-    if (strategyId) {
+    if (sid) {
       checkAccess().then(() => { loadStrategyDetails(); loadMessages(); });
     }
-  }, [strategyId]);
+  }, [sid]);
 
   useEffect(() => {
     scrollToBottom();
@@ -186,12 +194,12 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
   };
 
   const loadMessages = async () => {
-    if (!strategyId) return;
+    if (!sid) return;
     
     setIsLoading(true);
     try {
       const response = await fetch(
-        getFunctionUrl(`strategies/${strategyId}/chat`),
+        getFunctionUrl(`strategies/${sid}/chat`),
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`
@@ -256,7 +264,7 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
       return;
     }
     const userMessage = String(inputRef.current?.value ?? inputMessage).trim();
-    if (!userMessage || !strategyId) return;
+    if (!userMessage || !sid) return;
     setInputMessage("");
     setIsSending(true);
     const tempUserMsg: Message = {
@@ -280,17 +288,17 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
       const versionsMeta = versions.slice(0, 5).map(v => ({ id: v.id, timestamp: v.timestamp }));
       const strat = strategy || readLocal(storageKeys.strategy) || null;
       const strategyContext = strat
-        ? { id: strat.id || strategyId, name: strat.strategy_name || 'Strategy', platform: strat.platform || '', baseCode: String(strat.generated_code || '') }
-        : { id: strategyId };
+        ? { id: strat.id || sid, name: strat.strategy_name || 'Strategy', platform: strat.platform || '', baseCode: String(strat.generated_code || '') }
+        : { id: sid };
       const response = await fetch(
-        getFunctionUrl(`strategies/${strategyId}/chat`),
+        getFunctionUrl(`strategies/${sid}/chat`),
         {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ message: userMessage, codeOverride, strategyId, strategyContext, editSummary, versionsMeta })
+          body: JSON.stringify({ message: userMessage, codeOverride, strategyId: sid, strategyContext, editSummary, versionsMeta })
         }
       );
       if (!response.ok) {
@@ -338,37 +346,17 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <div
-        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-b-[30px]"
-        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
-      >
-        <div className="app-container flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onNavigate('home')}
-                aria-label="Go back"
-                className="mr-1 h-12 w-12 min-h-[48px] min-w-[48px] text-white hover:bg-white/10"
-              >
-                <ArrowLeft className="w-6 h-6" />
-              </Button>
-              <div>
-                <h1 className="text-[clamp(1rem,3.8vw,1.125rem)] text-white">EACoder AI BOT</h1>
-                <p className="text-[clamp(0.75rem,2.8vw,0.875rem)] text-blue-100">
-                  Refine and tweak your strategy
-                </p>
-              </div>
-            </div>
-            <NotificationBell accessToken={accessToken} onNavigate={onNavigate} />
-          </div>
-        </div>
+      <Header
+        title="EACoder AI BOT"
+        subtitle="Refine and tweak your strategy"
+        onBack={() => onNavigate('home')}
+        rightContent={<NotificationBell accessToken={accessToken} onNavigate={onNavigate} />}
+      />
 
     {/* Removed default subscription banner for basic users.
         Free users see restrictions only when server denies access or quota is exhausted. */}
 
-    {!strategyId && (
+    {!sid && (
       <div className="app-container w-full px-[9px] pt-3 safe-nav-pad">
         <Card className="mt-8" style={glassCardStyle}>
           <CardContent className="p-8 text-center">
@@ -389,7 +377,7 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
       </div>
     )}
 
-    {strategyId && !isLoading && messages.length === 0 && (
+    {sid && !isLoading && messages.length === 0 && (
       <div className="app-container w-full px-[9px] pt-3 safe-nav-pad">
         <Card style={glassCardStyle}>
           <CardContent className="p-6 text-center">
@@ -422,7 +410,7 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
           `flex-1 app-container w-full px-[9px] pt-3 safe-nav-pad overflow-x-hidden flex flex-col min-h-0`
         }
       >
-        {!strategyId ? (
+        {!sid ? (
           <div />
         ) : isLoading ? (
           <div className="flex items-center justify-center h-full">
@@ -507,7 +495,7 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
             </div>
           </ScrollArea>
         )}
-        {strategyId && !isProUser ? (
+        {sid && !isProUser ? (
           <div
             style={{
               position: 'fixed',

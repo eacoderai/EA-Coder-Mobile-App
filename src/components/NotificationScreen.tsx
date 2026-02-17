@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Bell, CheckCircle2, Clock, TrendingUp, X } from "lucide-react";
+import { Bell, CheckCircle2, Clock, TrendingUp, X } from "lucide-react";
 import { toast } from "../utils/tieredToast";
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { getFunctionUrl } from '../utils/supabase/client';
 import { PullToRefresh } from "./ui/PullToRefresh";
+import { Header, HeaderAction } from "./Header";
 
 interface Notification {
   id: string;
@@ -15,6 +16,7 @@ interface Notification {
   strategyId?: string;
   strategyName?: string;
   improvements?: string[];
+  priority?: 'high' | 'medium' | 'low';
 }
 
 interface NotificationScreenProps {
@@ -90,13 +92,29 @@ export function NotificationScreen({ onNavigate, accessToken, isProUser, onRefre
 
       const data = await response.json();
       const serverNotifs: Notification[] = data.notifications || [];
-      const allowedTypes = new Set<Notification['type']>(['analysis_update', 'subscription', 'payment', 'strategy_creation']);
+      const allowedTypes = new Set<Notification['type']>(['analysis_update', 'subscription', 'payment', 'strategy_creation', 'system']);
       const filtered = serverNotifs.filter(n => allowedTypes.has(n.type));
-      const list = filtered.sort((a, b) => (new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      const typePriority: Record<Notification['type'], number> = {
+        subscription: 3,
+        payment: 3,
+        strategy_creation: 2,
+        analysis_update: 1,
+        system: 0,
+      };
+      const priRank = (n: Notification) => n.priority === 'high' ? 2 : n.priority === 'medium' ? 1 : 0;
+      const list = filtered.sort((a, b) => {
+        if (a.read !== b.read) return a.read ? 1 : -1;
+        const pr = priRank(b) - priRank(a);
+        if (pr !== 0) return pr;
+        const tp = (typePriority[b.type] || 0) - (typePriority[a.type] || 0);
+        if (tp !== 0) return tp;
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
       setNotifications(list);
 
       // If we see a subscription notification, ensure app state is in sync
       if (onRefreshSubscription && list.some(n => n.type === 'subscription')) {
+        console.log('[NotificationScreen] Subscription notification detected, triggering refresh...');
         onRefreshSubscription();
       }
     } catch (error) {
@@ -110,7 +128,7 @@ export function NotificationScreen({ onNavigate, accessToken, isProUser, onRefre
   const markAsRead = async (notificationId: string) => {
     try {
       const response = await fetch(
-        getFunctionUrl(`server/make-server-00a119be/notifications/${notificationId}/read`),
+        getFunctionUrl(`make-server-00a119be/notifications/${notificationId}/read`),
         {
           method: 'POST',
           headers: {
@@ -161,7 +179,7 @@ export function NotificationScreen({ onNavigate, accessToken, isProUser, onRefre
   const deleteNotification = async (notificationId: string) => {
     try {
       const response = await fetch(
-        getFunctionUrl(`server/make-server-00a119be/notifications/${notificationId}`),
+        getFunctionUrl(`make-server-00a119be/notifications/${notificationId}`),
         {
           method: 'DELETE',
           headers: {
@@ -221,17 +239,16 @@ export function NotificationScreen({ onNavigate, accessToken, isProUser, onRefre
 
   const formatTimestamp = (timestamp: string) => {
     const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString();
+    const diff = Date.now() - date.getTime();
+    if (diff < 60_000) return 'Just now';
+    if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+    if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+    if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+    try {
+      return date.toLocaleString(undefined, { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return date.toLocaleString();
+    }
   };
 
   const filteredNotifications = filter === 'all' 
@@ -256,37 +273,31 @@ export function NotificationScreen({ onNavigate, accessToken, isProUser, onRefre
   return (
     // Full viewport coverage for all content states
     <div className="min-h-screen w-screen bg-background flex flex-col">
-      <div className="app-container flex-1 px-[9px] py-6 safe-nav-pad flex flex-col">
+      {/* Place header at top-level to eliminate any top padding gap */}
+      <Header
+        title="Notifications"
+        subtitle={unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
+        onBack={() => onNavigate('home')}
+        paddingClassName="p-4"
+        borderClassName=""
+        bgClassName="bg-gradient-to-r from-blue-600 to-blue-800"
+        textClassName="text-white"
+        rightActions={
+          unreadCount > 0
+            ? ([{
+                label: "Mark all read",
+                onClick: markAllAsRead,
+                ariaLabel: "Mark all notifications as read",
+                renderAsSpan: true,
+                className: "ml-2 cursor-pointer"
+              }] as HeaderAction[])
+            : undefined
+        }
+      />
+      <div className="app-container flex-1 px-[9px] pb-6 safe-nav-pad flex flex-col">
         <PullToRefresh className="flex-1 flex flex-col" onRefresh={fetchNotifications}>
-          {/* Header */}
+          {/* Filter Tabs */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <button
-                  aria-label="Back to Home"
-                  onClick={() => onNavigate('home')}
-                  className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                </button>
-                <div>
-                  <h1 className="text-gray-900 dark:text-white mb-1">Notifications</h1>
-                  <p className="text-gray-600 dark:text-gray-400">
-                    {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up!'}
-                  </p>
-                </div>
-              </div>
-              {unreadCount > 0 && (
-                <button
-                  onClick={markAllAsRead}
-                  className="px-3 py-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                >
-                  Mark all read
-                </button>
-              )}
-            </div>
-
-            {/* Filter Tabs */}
             <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
               <button
                 onClick={() => setFilter('all')}
@@ -394,10 +405,7 @@ export function NotificationScreen({ onNavigate, accessToken, isProUser, onRefre
                           <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                             <Clock className="w-3.5 h-3.5" />
                             <span title={new Date(notification.timestamp).toLocaleString()}>
-                              {new Date(notification.timestamp).toLocaleString()}
-                            </span>
-                            <span>
-                              ({formatTimestamp(notification.timestamp)})
+                              {formatTimestamp(notification.timestamp)}
                             </span>
                           </div>
 

@@ -17,7 +17,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "./ui/alert-dialog";
-import { User, Mail, Moon, Sun, LogOut, Shield, FileText, Crown, ChevronRight, Zap, Star, Play, HelpCircle } from "lucide-react";
+import { User, Mail, Moon, Sun, LogOut, Shield, FileText, Crown, ChevronRight, Zap, Star, Play, HelpCircle, Key, Share2, Gift, Users, Link as LinkIcon, Copy } from "lucide-react";
 import { supabase } from '../utils/supabase/client';
 import { toast } from "../utils/tieredToast";
 import { Tier } from "../types/user";
@@ -27,23 +27,29 @@ import { projectId } from '../utils/supabase/info';
 import { getFunctionUrl } from '../utils/supabase/client';
 import { useTheme } from "./ThemeProvider";
 import { NotificationBell } from "./ui/NotificationBell";
+import { Header } from "./Header";
 
 interface ProfileScreenProps {
   onLogout: () => void;
   onNavigate?: (screen: string) => void;
   accessToken?: string | null;
+  tier?: Tier;
+  subscriptionData?: any;
 }
 
-export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScreenProps) {
+export function ProfileScreen({ onLogout, onNavigate, accessToken, tier, subscriptionData }: ProfileScreenProps) {
   const [user, setUser] = useState<any>(null);
   const { theme, setTheme } = useTheme();
   const darkMode = theme === 'dark';
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [subscription, setSubscription] = useState<{ plan: Tier } | null>(null);
+  const [subscription, setSubscription] = useState<{ plan: Tier } | null>(subscriptionData || (tier ? { plan: tier } : null));
   // Navigation loading state for accessible feedback during redirects
   const [isNavigatingTo, setIsNavigatingTo] = useState<null | 'privacy' | 'terms'>(null);
   const [isVideoThumbnailLoaded, setIsVideoThumbnailLoaded] = useState(false);
+  const [referralCode, setReferralCode] = useState("");
+  const [referralLink, setReferralLink] = useState("");
+  const [refMetrics, setRefMetrics] = useState({ clicks: 0, signups: 0, conversions: 0, rewards: 0 });
 
   /**
    * Navigation handlers for App Info section
@@ -71,8 +77,15 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
 
   useEffect(() => {
     loadUser();
-    loadSubscription();
-  }, []);
+    // Use synchronized data from props if available
+    if (subscriptionData) {
+      setSubscription(subscriptionData);
+    } else if (tier) {
+      setSubscription({ plan: tier });
+    } else {
+      loadSubscription();
+    }
+  }, [tier, subscriptionData]);
 
   const loadUser = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -81,6 +94,11 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
       setEmail(user.email || '');
       const meta = user.user_metadata || {} as any;
       setName(meta.display_name || meta.full_name || meta.name || '');
+      const code = (meta.referral_code && String(meta.referral_code)) || (user.id ? String(user.id).slice(0, 6).toUpperCase() : '');
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const link = origin ? `${origin}/?ref=${code}` : `/?ref=${code}`;
+      setReferralCode(code);
+      setReferralLink(link);
     }
   };
 
@@ -143,31 +161,20 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div
-        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 pb-10 rounded-b-[30px] mb-4"
-        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
-      >
-        <div className="app-container flex items-center justify-between">
-          <div className="flex items-center mb-4">
-            <div className="bg-white p-3 rounded-full mr-4">
-              <User className="w-8 h-8 text-blue-600" />
-            </div>
-            <div>
-              <h1 className="text-2xl">{name || 'User'}</h1>
-              <p className="text-sm text-blue-100">{email}</p>
-            </div>
-          </div>
-          <NotificationBell accessToken={accessToken || null} onNavigate={onNavigate} />
-        </div>
-      </div>
+      <Header
+        title={name || 'User'}
+        subtitle={email}
+        leadingIcon={<User className="w-6 h-6 text-white" />}
+        rightContent={<NotificationBell accessToken={accessToken || null} onNavigate={onNavigate} />}
+        paddingClassName="p-6 pb-12"
+      />
 
   <div className="app-container flex-1 px-[9px] py-4 safe-nav-pad space-y-4">
         {/* Subscription Card */}
         {subscription && onNavigate && (
           <Card
             style={glassCardStyle}
-            className="cursor-pointer hover:shadow-md transition-shadow"
+            className="mt-10 sm:mt-12 lg:mt-14 cursor-pointer hover:shadow-md transition-shadow"
             onClick={() => onNavigate('subscription')}
           >
             <CardContent className="p-4">
@@ -206,6 +213,85 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
             </CardContent>
           </Card>
         )}
+
+        {/* Tutorial Card */}
+        <Card style={glassCardStyle}>
+          <CardHeader>
+            <CardTitle className="text-base">Invite & Earn</CardTitle>
+            <CardDescription>Share your code and earn rewards</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Gift className="w-5 h-5 text-pink-600" />
+                <span className="text-sm text-gray-700 dark:text-gray-200">Your code</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full bg-blue-600/10 text-blue-700 dark:text-blue-300 text-sm font-medium">{referralCode || '—'}</span>
+                <Button
+                  variant="outline"
+                  onClick={() => referralCode && navigator.clipboard.writeText(referralCode).then(() => toast.success('Code copied'))}
+                  className="h-8"
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <LinkIcon className="w-4 h-4 text-gray-500" />
+                <span className="text-sm text-gray-700 dark:text-gray-300">Your link</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Input value={referralLink} readOnly />
+                <Button
+                  variant="outline"
+                  onClick={() => referralLink && navigator.clipboard.writeText(referralLink).then(() => toast.success('Link copied'))}
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+                <Button
+                  onClick={async () => {
+                    const text = `Join EACoder AI with my code ${referralCode}: ${referralLink}`;
+                    try {
+                      if (navigator.share) {
+                        await navigator.share({ title: 'EACoder AI', text, url: referralLink });
+                      } else {
+                        await navigator.clipboard.writeText(text);
+                        toast.success('Invite text copied');
+                      }
+                    } catch {}
+                  }}
+                >
+                  <Share2 className="w-4 h-4 mr-2" />
+                  Share
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border p-3 dark:border-gray-800">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Clicks</p>
+                <p className="text-lg font-semibold">{refMetrics.clicks}</p>
+              </div>
+              <div className="rounded-xl border p-3 dark:border-gray-800">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Signups</p>
+                <p className="text-lg font-semibold">{refMetrics.signups}</p>
+              </div>
+              <div className="rounded-xl border p-3 dark:border-gray-800">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Conversions</p>
+                <p className="text-lg font-semibold">{refMetrics.conversions}</p>
+              </div>
+              <div className="rounded-xl border p-3 dark:border-gray-800">
+                <p className="text-xs text-gray-500 dark:text-gray-400">Rewards</p>
+                <p className="text-lg font-semibold">{refMetrics.rewards}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+              <Users className="w-4 h-4" />
+              <span>Rewards apply after qualifying actions</span>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Tutorial Card */}
         <Card style={glassCardStyle}>
@@ -280,6 +366,15 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
                 />
               </div>
             </div>
+            <Button
+              variant="outline"
+              className="w-full mt-2"
+              style={{ borderRadius: '25px' }}
+              onClick={() => onNavigate && onNavigate('update-password')}
+            >
+              <Key className="w-4 h-4 mr-2" />
+              Change Password
+            </Button>
           </CardContent>
         </Card>
 
@@ -349,13 +444,13 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
         {/* App Info */}
         <Card style={glassCardStyle}>
           <CardHeader>
-            <CardTitle className="text-base">About EA Coder</CardTitle>
+          <CardTitle className="text-base">About EACoder AI</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="flex items-center gap-3 text-sm">
               <img
                 src={logoImage}
-                alt="EA Coder"
+                alt="EACoder AI"
                 className="w-15 h-16"
               />
               <div>
@@ -410,7 +505,7 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken }: ProfileScre
         <Card style={glassCardStyle}>
           <CardContent className="p-4">
             <p className="text-xs text-amber-800 dark:text-amber-200">
-              <strong>Trading Disclaimer:</strong> EA Coder generates code and analysis for educational and research purposes. 
+              <strong>Trading Disclaimer:</strong> EACoder AI generates code and analysis for educational and research purposes. 
               Trading involves substantial risk of loss. Always test strategies thoroughly on demo accounts. 
               We do not provide financial advice.
             </p>

@@ -26,9 +26,10 @@ interface AnalyzeScreenProps {
 }
 
 import { Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
-import { addLocalNotification } from '../utils/notifications';
+// removed unused addLocalNotification import
 import { logSuppressedLimitToast } from '../utils/limits';
 import { NotificationBell } from "./ui/NotificationBell";
+import { Header } from "./Header";
 
 class AnalyzeErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error?: any }>{
   constructor(props: any) {
@@ -57,6 +58,14 @@ class AnalyzeErrorBoundary extends React.Component<{ children: React.ReactNode }
 }
 
 export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remainingGenerations, onGenerationCount }: AnalyzeScreenProps) {
+  const [lsNonce, setLsNonce] = React.useState(0);
+  const sid: string | undefined = React.useMemo(() => {
+    if (strategyId) return strategyId;
+    try {
+      const s = typeof window !== 'undefined' ? window.localStorage.getItem('lastSelectedStrategyId') : null;
+      return s ? JSON.parse(s) : undefined;
+    } catch { return undefined; }
+  }, [strategyId, lsNonce]);
   // EA Coder Analysis Screen - v2.0 (Coin system removed)
   const [strategy, setStrategy] = useState<StrategyRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -75,6 +84,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
   const nextAnalysisTimeoutRef = useRef<number | null>(null);
   const proContainerRef = useRef<HTMLDivElement | null>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
+  const [analysisPendingFlag, setAnalysisPendingFlag] = useState(false);
 
 
   const formatPercent = (v: unknown): string => {
@@ -106,8 +116,51 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     }
   };
 
+  React.useEffect(() => {
+    if (!sid) return;
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('lastSelectedStrategyId', JSON.stringify(sid));
+        window.localStorage.setItem('lastSelectedStrategyAt', String(Date.now()));
+      }
+    } catch {}
+  }, [sid]);
+
+  React.useEffect(() => {
+    if (strategyId) return;
+    const iv = window.setInterval(() => {
+      try {
+        if (typeof window === 'undefined') return;
+        const lastAt = Number(window.localStorage.getItem('lastSelectedStrategyAt') || '0');
+        if (!lastAt) return;
+        const elapsed = Date.now() - lastAt;
+        if (elapsed >= 30000) {
+          window.localStorage.removeItem('lastSelectedStrategyId');
+          window.localStorage.removeItem('lastSelectedStrategyAt');
+          setLsNonce((n) => n + 1);
+        }
+      } catch {}
+    }, 30000);
+    return () => { try { window.clearInterval(iv); } catch {} };
+  }, [strategyId]);
+
+  React.useEffect(() => {
+    if (strategyId) return;
+    try {
+      if (typeof window === 'undefined') return;
+      const lastAt = Number(window.localStorage.getItem('lastSelectedStrategyAt') || '0');
+      if (!lastAt) return;
+      const elapsed = Date.now() - lastAt;
+      if (elapsed >= 30000) {
+        window.localStorage.removeItem('lastSelectedStrategyId');
+        window.localStorage.removeItem('lastSelectedStrategyAt');
+        setLsNonce((n) => n + 1);
+      }
+    } catch {}
+  }, [strategyId]);
+
   useEffect(() => {
-    if (strategyId) {
+    if (sid) {
       loadStrategy();
       // loadSubscription removed
       loadNextAnalysis();
@@ -116,7 +169,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     } else {
       setIsLoading(false);
     }
-  }, [strategyId]);
+  }, [sid]);
 
   useEffect(() => {
     const el = proContainerRef.current;
@@ -135,31 +188,37 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
       mo = new MutationObserver(measure);
       mo.observe(el, { childList: true, subtree: true, attributes: true });
     } catch {}
-    const id = window.setInterval(measure, 1000);
     return () => {
-      window.clearInterval(id);
       try { if (ro) ro.disconnect(); if (mo) mo.disconnect(); } catch {}
     };
   }, [proContainerRef]);
 
   // Poll next analysis and auto-run when due (premium only)
   useEffect(() => {
-    if (!strategyId || tier === 'free') return;
+    if (!sid || tier === 'free') return;
     const interval = setInterval(async () => {
       const due = nextAnalysis ? new Date(nextAnalysis).getTime() <= Date.now() : false;
-      if (due && !processingQueue.current) {
-        queueAnalysisTask(async () => {
-          // Hitting next-analysis will auto-run on the server if due
-          await loadNextAnalysis();
-          await fetchLatestAnalysis();
-          await loadStrategy();
-          try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('ea:analysis_update', { detail: { strategyId } })); } catch {}
-        });
-        processAnalysisQueue();
-      }
+      if (!due || processingQueue.current) return;
+      const throttleKey = `next-analysis:last:${sid}`;
+      const allowRun = (() => {
+        try {
+          const last = Number(window.localStorage.getItem(throttleKey) || '0');
+          // throttle to at most once every 10 minutes
+          return !last || (Date.now() - last) > 10 * 60 * 1000;
+        } catch { return true; }
+      })();
+      if (!allowRun) return;
+      queueAnalysisTask(async () => {
+        // Hitting next-analysis will auto-run on the server if due
+        await loadNextAnalysis();
+        await fetchLatestAnalysis();
+        await loadStrategy();
+        try { window.localStorage.setItem(throttleKey, String(Date.now())); } catch {}
+      });
+      processAnalysisQueue();
     }, 60000); // check every 60s
     return () => clearInterval(interval);
-  }, [strategyId, tier, nextAnalysis]);
+  }, [sid, tier, nextAnalysis]);
 
   useEffect(() => {
     if (nextAnalysisTimeoutRef.current) {
@@ -167,7 +226,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
       nextAnalysisTimeoutRef.current = null;
     }
     const isProUser = tier !== 'free';
-    if (!strategyId || !isProUser || !nextAnalysis) return;
+    if (!sid || !isProUser || !nextAnalysis) return;
     const msUntilDue = new Date(nextAnalysis).getTime() - Date.now();
     const delay = Math.max(0, msUntilDue);
     nextAnalysisTimeoutRef.current = window.setTimeout(() => {
@@ -176,7 +235,6 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
         await loadNextAnalysis();
         await fetchLatestAnalysis();
         await loadStrategy();
-        try { if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('ea:analysis_update', { detail: { strategyId } })); } catch {}
       });
       processAnalysisQueue();
     }, delay);
@@ -186,10 +244,10 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
         nextAnalysisTimeoutRef.current = null;
       }
     };
-  }, [nextAnalysis, tier, strategyId]);
+  }, [nextAnalysis, tier, sid]);
 
   useEffect(() => {
-    if (!strategyId || !strategy) return;
+    if (!sid || !strategy) return;
     const hasImprovements = Array.isArray(analysisImprovements) && analysisImprovements.length > 0;
     const hasMetrics = (
       strategy?.win_rate !== undefined ||
@@ -199,33 +257,45 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     );
 
     // Check if analysis was recently triggered by SubmitStrategyScreen
-    const flagKey = `analysis_started:${strategyId}`;
+    const flagKey = `analysis_started:${sid}`;
     const isPending = (() => {
       try { return typeof window !== 'undefined' && !!window.localStorage.getItem(flagKey); } catch { return false; }
     })();
+    setAnalysisPendingFlag(isPending);
 
-    if ((!hasImprovements || !hasMetrics) && !analysisLoading && !processingQueue.current && !autoTriggeredRef.current && !isPending) {
+    // Debounce auto-analysis: run at most once per strategy per day
+    const onceKey = `auto-analysis:once:${sid}`;
+    const ranRecently = (() => {
+      try {
+        const t = typeof window !== 'undefined' ? Number(window.localStorage.getItem(onceKey) || '0') : 0;
+        return t && (Date.now() - t) < 24 * 60 * 60 * 1000;
+      } catch { return false; }
+    })();
+
+    if ((!hasImprovements || !hasMetrics) && !analysisLoading && !processingQueue.current && !autoTriggeredRef.current && !isPending && !ranRecently) {
       autoTriggeredRef.current = true;
       queueAnalysisTask(async () => {
         await triggerReanalysisInternal(false);
         await fetchLatestAnalysis();
+        try { if (typeof window !== 'undefined') window.localStorage.setItem(onceKey, String(Date.now())); } catch {}
       });
       processAnalysisQueue();
     }
-  }, [strategy, strategyId, analysisImprovements, analysisLoading]);
+  }, [strategy, sid, analysisImprovements, analysisLoading]);
 
   // Polling effect for missing metrics or pending analysis
   useEffect(() => {
-    if (!strategyId) return;
+    if (!sid) return;
 
     const hasMetrics = strategy?.win_rate !== undefined || 
                        strategy?.profit_factor !== undefined || 
                        strategy?.max_drawdown !== undefined;
                        
-    const flagKey = `analysis_started:${strategyId}`;
+    const flagKey = `analysis_started:${sid}`;
     const isPending = (() => {
         try { return typeof window !== 'undefined' && !!window.localStorage.getItem(flagKey); } catch { return false; }
     })();
+    setAnalysisPendingFlag(isPending);
 
     if (hasMetrics) {
         // Clear pending flag if we have data
@@ -233,27 +303,35 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
         return;
     }
 
-    // If no metrics, poll for updates every 4 seconds
+    // If no metrics, poll for updates every 10 seconds
     const id = setInterval(() => {
+        if (analysisLoading) return;
         loadStrategy();
         fetchLatestAnalysis();
-    }, 4000);
+    }, 10000);
 
     // Stop polling after 90s (giving ample time for analysis)
     const timeout = setTimeout(() => {
         clearInterval(id);
     }, 90000);
 
+    const fallback = setTimeout(() => {
+        if (analysisLoading || processingQueue.current) return;
+        try { window.localStorage.removeItem(flagKey); } catch {}
+        triggerReanalysisInternal(false);
+    }, 30000);
+
     return () => {
         clearInterval(id);
         clearTimeout(timeout);
+        clearTimeout(fallback);
     };
-  }, [strategyId, strategy]);
+  }, [sid, strategy]);
 
   const loadStrategy = async () => {
     try {
-      console.log('[Analyze] LoadStrategy start', { strategyId });
-      const data = await apiFetch<any>(`make-server-00a119be/strategies/${strategyId}`, {
+      console.log('[Analyze] LoadStrategy start', { strategyId: sid });
+      const data = await apiFetch<any>(`make-server-00a119be/strategies/${sid}`, {
         accessToken,
         retries: 1,
       });
@@ -282,7 +360,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
   };
 
   const fetchLatestAnalysis = async () => {
-    if (!accessToken || !strategyId) return;
+    if (!accessToken || !sid) return;
     setAnalysisLoading(true);
     setAnalysisError(null);
     try {
@@ -292,7 +370,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
       });
       const items = Array.isArray(data?.notifications) ? data.notifications : Array.isArray(data) ? data : [];
       const latest = items
-        .filter((n: AnalysisNotification) => n?.type === 'analysis_update' && String(n?.strategyId) === String(strategyId))
+        .filter((n: AnalysisNotification) => n?.type === 'analysis_update' && String(n?.strategyId) === String(sid))
         .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
       if (latest && Array.isArray(latest.improvements)) {
         setAnalysisImprovements(latest.improvements);
@@ -323,11 +401,11 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
   };
 
   const loadNextAnalysis = async () => {
-    if (!accessToken || !strategyId) return;
+    if (!accessToken || !sid) return;
     
     try {
-      console.log('[Analyze] LoadNextAnalysis start', { strategyId });
-      const data = await apiFetch<any>(`make-server-00a119be/strategies/${strategyId}/next-analysis`, {
+      console.log('[Analyze] LoadNextAnalysis start', { strategyId: sid });
+      const data = await apiFetch<any>(`make-server-00a119be/strategies/${sid}/next-analysis`, {
         accessToken,
         retries: 1,
       });
@@ -369,13 +447,13 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     setAnalysisError(null);
     try {
       const txId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const data = await apiFetch<any>(`make-server-00a119be/strategies/${strategyId}/reanalyze`, {
+      const data = await apiFetch<any>(`make-server-00a119be/strategies/${sid}/reanalyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: {
           analysis_prompt: buildStrategyAnalysisPrompt(strategy || {}),
           strategy_context: {
-            strategy_id: strategyId,
+            strategy_id: sid,
             strategy_name: strategy?.strategy_name || 'Untitled Strategy',
             description: strategy?.description || '',
             risk_management: strategy?.risk_management || '',
@@ -461,42 +539,18 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
   return (
     <AnalyzeErrorBoundary>
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Gating removed: basic users can view analysis even at limit */}
-      {/* Header */}
-      <div
-        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-b-[30px]"
-        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
-      >
-        <div className="app-container flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onNavigate('home')}
-              className="mr-1 text-white hover:bg-white/10"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <h1 className="text-lg text-white">Strategy Analysis</h1>
-              <p className="text-xs text-blue-100">
-                Simulated backtest metrics
-              </p>
-            </div>
-            {tier && (
-              <Badge variant="outline" className="ml-2 text-white border-white/30">
-                {tier === 'free' ? 'Free Plan' : tier === 'pro' ? 'Pro' : 'Elite'}
-              </Badge>
-            )}
-          </div>
-          <NotificationBell accessToken={accessToken} onNavigate={onNavigate} />
-        </div>
-      </div>
+      <Header
+        title="Strategy Analysis"
+        subtitle="Simulated backtest metrics"
+        onBack={() => onNavigate('home')}
+        rightContent={<NotificationBell accessToken={accessToken} onNavigate={onNavigate} />}
+        titleRightContent={tier ? <Badge variant="outline" className="ml-2 text-white border-white/30">{tier === 'free' ? 'Free Plan' : tier === 'pro' ? 'Pro' : 'Elite'}</Badge> : null}
+      />
 
       <div className="flex-1 app-container w-full px-[9px] pt-3 safe-nav-pad overflow-x-hidden flex flex-col min-h-0 space-y-4">
         {/* Removed quota banners */}
 
-        {!strategyId ? (
+        {!sid ? (
           <Card style={glassCardStyle}>
             <CardContent className="p-8 text-center">
               <Activity className="w-12 h-12 text-blue-600 mx-auto mb-4" />
@@ -672,6 +726,12 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
                       {strategy.backtest_period || "3 Years"}
                     </Badge>
                   </div>
+                  {(!strategy?.win_rate && !strategy?.profit_factor && !strategy?.max_drawdown) && (analysisLoading || analysisPendingFlag) && (
+                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Analyzing strategy...</span>
+                    </div>
+                  )}
                   
                   <div className="grid grid-cols-2 gap-3">
                     {renderMetricCard(
@@ -944,7 +1004,8 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
                   </p>
                   <Button 
                     onClick={() => onNavigate('subscription', 'plan-pro')}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 h-12 w-[220px] shadow-lg text-base whitespace-nowrap"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-10 h-12 w-[260px] shadow-lg text-base whitespace-nowrap text-center"
+                    style={{ borderRadius: '9999px', paddingLeft: 16, paddingRight: 16 }}
                   >
                     Upgrade to Pro
                   </Button>
@@ -958,5 +1019,3 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
     </AnalyzeErrorBoundary>
   );
 }
-
-

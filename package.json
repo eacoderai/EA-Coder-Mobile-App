@@ -82,6 +82,7 @@
             "test": "vitest",
             "preview": "vite preview --port 3005",
             "test:devices": "playwright test --reporter=list",
-            "test:devices:update": "playwright test --update-snapshots"
+      "test:devices:update": "playwright test --update-snapshots",
+      "deploy:functions": "node -e \"if(!process.env.SUPABASE_ACCESS_TOKEN||!process.env.SUPABASE_PROJECT_REF){console.error('Missing SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF');process.exit(1)}\" && npx supabase functions deploy server --project-ref %SUPABASE_PROJECT_REF%"
       }
 }

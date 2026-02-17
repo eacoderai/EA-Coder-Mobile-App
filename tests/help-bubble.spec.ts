@@ -51,8 +51,8 @@ test.describe('HelpBubble Component', () => {
     // Switch to Videos
     await page.getByRole('tab', { name: 'Videos' }).click();
     // Check for a video title placeholder or existing one
-    // We know VIDEO_TUTORIALS has "Getting Started with EA Coder"
-    await expect(page.getByText('Getting Started with EA Coder')).toBeVisible();
+    // We know VIDEO_TUTORIALS has "Getting Started with EACoder AI"
+    await expect(page.getByText('Getting Started with EACoder AI')).toBeVisible();
 
     // Switch to Contact
     await page.getByRole('tab', { name: 'Contact' }).click();

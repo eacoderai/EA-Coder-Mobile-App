@@ -19,6 +19,9 @@ import { BottomNav } from "./components/BottomNav";
 import { HelpBubble } from "./components/HelpBubble";
 import { HelpCenterScreen } from "./components/HelpCenterScreen";
 import UpdatePasswordScreen from "./components/UpdatePasswordScreen";
+import { JournalHomeScreen } from "./components/JournalHomeScreen";
+import { TradeEntryForm } from "./components/TradeEntryForm";
+import { JournalReportScreen } from "./components/JournalReportScreen";
 import { Toaster } from "./components/ui/sonner";
 import { toast, setToastAccountType } from "./utils/tieredToast";
 import { App as CapacitorApp } from '@capacitor/app';
@@ -38,7 +41,9 @@ export default function App() {
   const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [tier, setTier] = useState<Tier>('free');
+  const [fullSubscription, setFullSubscription] = useState<any>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isSyncingPlan, setIsSyncingPlan] = useState(false);
   const [generationUsage, setGenerationUsage] = useState<{ codeUsed: number; analysisUsed: number; limit: number }>({ codeUsed: 0, analysisUsed: 0, limit: 1 });
   const [serverUsage, setServerUsage] = useState<{ count: number; remaining: number; window: string } | null>(null);
 
@@ -67,6 +72,15 @@ export default function App() {
     // Keep toast system aware of current account type (includes dev override)
     setToastAccountType(effectiveTier);
   }, [effectiveTier]);
+
+  useEffect(() => {
+    try {
+      if (!selectedStrategyId && typeof window !== 'undefined') {
+        const s = window.localStorage.getItem('lastSelectedStrategyId');
+        if (s) setSelectedStrategyId(JSON.parse(s));
+      }
+    } catch {}
+  }, []);
 
   useEffect(() => {
     // Handle Deep Links (Mobile)
@@ -121,119 +135,94 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (forceAuth) {
-      setIsAuthenticated(true);
-      setIsCheckingAuth(false);
-      return;
-    }
-    checkAuth();
+    // Global session listener to handle multi-tab/external state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event);
+      
       if (event === 'SIGNED_IN' && session) {
-        setAccessToken(session.access_token);
         setIsAuthenticated(true);
+        setAccessToken(session.access_token);
         setUserId(session.user?.id || null);
-        // Load usage from local storage for this user
-        if (session.user?.id) {
-          const raw = window.localStorage.getItem(`gen-usage:${session.user.id}`);
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (typeof parsed?.codeUsed === 'number' && typeof parsed?.analysisUsed === 'number') {
-                setGenerationUsage({ codeUsed: parsed.codeUsed, analysisUsed: parsed.analysisUsed, limit: TIER_LIMITS[effectiveTier].generations });
-              }
-            } catch {}
-          }
-        }
-        // Parallel fetch for better performance and accurate tier gating
-        const [fetchedTier] = await Promise.all([
-          loadSubscription(session.access_token),
-          loadUsage(session.access_token)
-        ]);
-
-        // First-login gating: Only redirect if actually free
-        const firstKey = session.user?.id ? `first-login:${session.user.id}` : null;
-        const isFirstLogin = firstKey && !window.localStorage.getItem(firstKey);
-        if (isFirstLogin) {
-          window.localStorage.setItem(firstKey!, '1');
-          if (fetchedTier === 'free') {
-            setCurrentScreen('subscription');
-            setActiveTab('profile');
-          }
-        }
+        loadSubscription(session.access_token);
       } else if (event === 'SIGNED_OUT') {
-        setAccessToken(null);
         setIsAuthenticated(false);
-        setTier('free');
+        setAccessToken(null);
         setUserId(null);
-        setServerUsage(null);
-        setGenerationUsage({ codeUsed: 0, analysisUsed: 0, limit: 1 });
-      } else if (event === 'PASSWORD_RECOVERY') {
-        setRecoveryMode(true);
+        setTier('free');
+        // Clear auth tokens from local storage manually to be safe
+        const storageKey = `sb-${projectId}-auth-token`;
+        window.localStorage.removeItem(storageKey);
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        setAccessToken(session.access_token);
       }
     });
-    return () => subscription.unsubscribe();
+
+    checkAuth();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const checkAuth = async () => {
-    try {
-      // Avoid refresh attempts when no auth token is stored for this origin/port
-      const storageKey = `sb-${projectId}-auth-token`;
-      const hasStored = typeof window !== 'undefined' && !!window.localStorage.getItem(storageKey);
-      if (!hasStored) {
-        setIsCheckingAuth(false);
-        return;
-      }
+    // Immediate state reset if we're clearly not authenticated to speed up UI
+    const storageKey = `sb-${projectId}-auth-token`;
+    const hasStored = typeof window !== 'undefined' && !!window.localStorage.getItem(storageKey);
+    
+    if (!hasStored) {
+      setIsAuthenticated(false);
+      setAccessToken(null);
+      setUserId(null);
+      setIsCheckingAuth(false);
+      return;
+    }
 
-      const { data: { session } } = await supabase.auth.getSession();
+    try {
+      console.log('[AuthBootstrap] Starting session check...');
+      // Direct session check
+      const { data: { session }, error } = await supabase.auth.getSession();
+
+      if (error) throw error;
+
       if (session?.access_token) {
-        setIsAuthenticated(true);
+        console.log('[AuthBootstrap] Session found. Blocking UI for plan sync...');
         setAccessToken(session.access_token);
+        setIsAuthenticated(true);
         setUserId(session.user?.id || null);
-        if (session.user?.id) {
-          const raw = window.localStorage.getItem(`gen-usage:${session.user.id}`);
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw);
-              if (typeof parsed?.codeUsed === 'number' && typeof parsed?.analysisUsed === 'number') {
-                setGenerationUsage({ codeUsed: parsed.codeUsed, analysisUsed: parsed.analysisUsed, limit: TIER_LIMITS[effectiveTier].generations });
-              }
-            } catch {}
-          }
-        }
-        await Promise.all([
-          loadSubscription(session.access_token),
-          loadUsage(session.access_token)
-        ]);
-      }
-    } catch (error) {
-      const msg = String((error as any)?.message || '');
-      if (/Invalid Refresh Token/i.test(msg)) {
-        try {
-          const scope = import.meta.env.DEV ? 'local' : 'global';
-          await supabase.auth.signOut({ scope } as any);
-        } catch (signOutErr: any) {
-          const smsg = String(signOutErr?.message || '');
-          if (/AbortError|aborted|ERR_ABORTED/i.test(smsg)) {
-            console.warn('Supabase signOut aborted during refresh recovery (harmless).');
-          } else {
-            console.warn('Sign-out during refresh recovery failed:', signOutErr);
-          }
-        }
+        
+        // Wait for plan sync BEFORE showing the main UI
+        await loadSubscription(session.access_token);
+        
+        // Load usage in background as it's less critical for initial render
+        loadUsage(session.access_token).catch(err => console.error('Background usage load error:', err));
+      } else {
         setIsAuthenticated(false);
         setAccessToken(null);
         setUserId(null);
-        setTier('free');
-        setGenerationUsage({ codeUsed: 0, analysisUsed: 0, limit: 1 });
-        toast.info('Your session expired. Please sign in again.');
-      } else {
-        console.error('Auth check error:', error);
+      }
+    } catch (error: any) {
+      console.error('[AuthBootstrap] Error:', error);
+      setIsAuthenticated(false);
+      setAccessToken(null);
+      setUserId(null);
+      // Only clear storage on specific definitive auth errors, not generic network ones
+      if (error.message?.includes('Invalid Refresh Token') || error.status === 400) {
+        window.localStorage.removeItem(storageKey);
       }
     } finally {
       setIsCheckingAuth(false);
+      setShowSplash(false);
+      console.log('[AuthBootstrap] Finished.');
     }
   };
 
   const loadSubscription = async (token: string): Promise<Tier> => {
+    const startTime = performance.now();
+    console.log(`[PlanSync] Starting plan sync at ${new Date().toISOString()}`);
+    // Only set syncing plan if we're not already authenticated to avoid blocking UI unnecessarily
+    const shouldBlock = !isAuthenticated;
+    if (shouldBlock) setIsSyncingPlan(true);
+    
     let currentTier: Tier = 'free';
     try {
       const res = await fetch(getFunctionUrl('make-server-00a119be/subscription'), {
@@ -241,24 +230,35 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        const planVal = data?.subscription?.plan;
+        const sub = data?.subscription;
+        setFullSubscription(sub);
+        const planVal = sub?.plan;
         if (planVal === 'elite') currentTier = 'elite';
         else if (planVal === 'pro' || planVal === 'premium') currentTier = 'pro';
         else currentTier = 'free';
         
+        console.log(`[PlanSync] Server returned plan: ${planVal} -> mapped to: ${currentTier}`);
         setTier(currentTier);
       } else {
+        console.warn(`[PlanSync] Subscription fetch failed with status: ${res.status}`);
         setTier('free');
+        setFullSubscription(null);
       }
     } catch (err) {
-      console.warn('Load subscription failed:', err);
+      console.warn('[PlanSync] Load subscription failed:', err);
       setTier('free');
+      setFullSubscription(null);
+    } finally {
+      const duration = (performance.now() - startTime).toFixed(2);
+      console.log(`[PlanSync] Plan sync completed in ${duration}ms. Active tier: ${currentTier}`);
+      setIsSyncingPlan(false);
     }
     return currentTier;
   };
 
   const loadUsage = async (token: string) => {
     try {
+      console.log('[UsageSync] Fetching usage...');
       const res = await fetch(getFunctionUrl('make-server-00a119be/usage'), {
         headers: { 'Authorization': `Bearer ${token}` },
       });
@@ -266,48 +266,91 @@ export default function App() {
         const data = await res.json();
         const usage = data?.usage;
         if (usage && typeof usage.count === 'number' && typeof usage.remaining === 'number') {
+          console.log('[UsageSync] Usage loaded:', usage);
           setServerUsage(usage);
           // Align client usage counters with server for gating
           setGenerationUsage({ codeUsed: usage.count, analysisUsed: 0, limit: 4 });
         }
       }
     } catch (err) {
-      console.warn('Load usage failed:', err);
+      console.warn('[UsageSync] Load usage failed:', err);
+    }
+  };
+
+  const refreshAppData = async () => {
+    if (!accessToken) return;
+    try {
+      console.log('[AppSync] Refreshing all app data...');
+      // Parallelize both subscription and usage data for speed
+      await Promise.all([
+        loadSubscription(accessToken),
+        loadUsage(accessToken)
+      ]);
+      console.log('[AppSync] Refresh completed successfully.');
+    } catch (err) {
+      console.error('[AppSync] Failed to refresh app data:', err);
+      // Optional: Show a toast or error indicator if sync fails repeatedly
     }
   };
 
   const handleAuthenticated = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      setAccessToken(session.access_token);
-      setIsAuthenticated(true);
-      setUserId(session.user?.id || null);
-      if (session.user?.id) {
-        const raw = window.localStorage.getItem(`gen-usage:${session.user.id}`);
-        if (raw) {
-          try {
-            const parsed = JSON.parse(raw);
-            if (typeof parsed?.codeUsed === 'number' && typeof parsed?.analysisUsed === 'number') {
-              setGenerationUsage({ codeUsed: parsed.codeUsed, analysisUsed: parsed.analysisUsed, limit: 4 });
-            }
-          } catch {}
+    const syncStartTime = performance.now();
+    console.log(`[AuthFlow] handleAuthenticated triggered at ${new Date().toISOString()}`);
+    // Only block if not already authenticated (though handleAuthenticated is usually for first-time)
+    if (!isAuthenticated) setIsSyncingPlan(true);
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        setAccessToken(session.access_token);
+        setIsAuthenticated(true);
+        setUserId(session.user?.id || null);
+        
+        console.log(`[AuthFlow] Session acquired for user: ${session.user?.id}. Fetching subscription...`);
+        
+        // Wait for subscription to load BEFORE allowing UI to proceed
+        const tier = await loadSubscription(session.access_token);
+        console.log(`[AuthFlow] Subscription loaded: ${tier}`);
+
+        if (session.user?.id) {
+          const raw = window.localStorage.getItem(`gen-usage:${session.user.id}`);
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (typeof parsed?.codeUsed === 'number' && typeof parsed?.analysisUsed === 'number') {
+                setGenerationUsage({ codeUsed: parsed.codeUsed, analysisUsed: parsed.analysisUsed, limit: 4 });
+              }
+            } catch {}
+          }
+        }
+
+        const firstKey = session.user?.id ? `first-login:${session.user.id}` : null;
+        const isFirstLogin = firstKey && !window.localStorage.getItem(firstKey);
+        
+        if (isFirstLogin) {
+          console.log(`[AuthFlow] First login detected. Redirecting to subscription.`);
+          window.localStorage.setItem(firstKey!, '1');
+          setCurrentScreen('subscription');
+          setActiveTab('profile');
+          await loadUsage(session.access_token);
+        } else {
+          console.log(`[AuthFlow] Returning user. Redirecting to home.`);
+          setCurrentScreen('home');
+          setActiveTab('home');
+          // Usage can load in background
+          loadUsage(session.access_token).catch(e => console.warn('Background usage load error:', e));
         }
       }
-      const firstKey = session.user?.id ? `first-login:${session.user.id}` : null;
-      const isFirstLogin = firstKey && !window.localStorage.getItem(firstKey);
-      if (isFirstLogin) {
-        window.localStorage.setItem(firstKey!, '1');
-        setTier('free');
-        setCurrentScreen('subscription');
-        setActiveTab('profile');
-        await loadUsage(session.access_token);
-      } else {
-        await loadSubscription(session.access_token);
-        setCurrentScreen('home');
-        setActiveTab('home');
+    } catch (error) {
+      console.error('[AuthFlow] handleAuthenticated failed:', error);
+      toast.error("Failed to sync your account details. Please try again.");
+    } finally {
+        const syncDuration = (performance.now() - syncStartTime).toFixed(2);
+        console.log(`[AuthFlow] handleAuthenticated complete in ${syncDuration}ms`);
+        setIsSyncingPlan(false);
+        setShowSplash(false);
       }
-    }
-  };
+    };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
@@ -380,6 +423,18 @@ export default function App() {
   };
 
   const handleNavigate = (screen: string, strategyId?: string) => {
+    console.log(`[Navigation] Navigating to: ${screen}, strategyId: ${strategyId}`);
+    // Journal tab is for Elite only. If a Pro/Free user somehow triggers it, we show the paywall.
+    if (screen === 'journal' && !isElite) {
+      toast.info('Upgrade to Elite for AI Trade Journaling', { 
+        audience: 'upgrade-to-elite', 
+        tag: 'journal_access_blocked' 
+      } as any);
+      setCurrentScreen('subscription');
+      setActiveTab('profile');
+      return;
+    }
+
     try {
       if (typeof window !== 'undefined') {
         window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
@@ -388,7 +443,19 @@ export default function App() {
       }
     } catch {}
     setCurrentScreen(screen);
-    if (strategyId) setSelectedStrategyId(strategyId);
+    if (strategyId) {
+      setSelectedStrategyId(strategyId);
+      try {
+        if (typeof window !== 'undefined') window.localStorage.setItem('lastSelectedStrategyId', JSON.stringify(strategyId));
+      } catch {}
+    } else if (screen === 'submit') {
+      setSelectedStrategyId(null);
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem('lastSelectedStrategyId');
+        }
+      } catch {}
+    }
     const screenToTab: Record<string, string> = {
       home: "home",
       submit: "home",
@@ -399,14 +466,20 @@ export default function App() {
       chat: "chat",
       convert: "convert",
       analyze: "analyze",
+      journal: "journal",
     };
     if (screenToTab[screen]) setActiveTab(screenToTab[screen]);
   };
 
-  if (showSplash) {
+  if (isCheckingAuth || showSplash) {
     return (
       <ThemeProvider>
-        <SplashScreen onComplete={() => setShowSplash(false)} />
+        <div className="min-h-screen w-screen bg-background">
+          <SplashScreen 
+            ready={!isCheckingAuth}
+            onComplete={() => setShowSplash(false)} 
+          />
+        </div>
       </ThemeProvider>
     );
   }
@@ -415,20 +488,9 @@ export default function App() {
   if ((typeof window !== 'undefined' && window.location.pathname.includes('update-password')) || currentScreen === "update-password") {
     return (
       <ThemeProvider>
-        <UpdatePasswordScreen />
-        <Toaster />
-      </ThemeProvider>
-    );
-  }
-
-  if (isCheckingAuth) {
-    return (
-      <ThemeProvider>
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-          <div className="text-center">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">Loading...</p>
-          </div>
+        <div className="min-h-screen w-screen bg-background">
+          <UpdatePasswordScreen onNavigate={handleNavigate} />
+          <Toaster />
         </div>
       </ThemeProvider>
     );
@@ -437,19 +499,19 @@ export default function App() {
   if (!isAuthenticated) {
     return (
       <ThemeProvider>
-        <>
+        <div className="min-h-screen w-screen bg-background">
           <AuthScreen onAuthenticated={handleAuthenticated} recovery={recoveryMode} resetToken={resetToken || undefined} />
           <Toaster />
-        </>
+        </div>
       </ThemeProvider>
     );
   }
 
   return (
     <ThemeProvider>
-      <>
-      <div className="flex-1 bg-gray-50 dark:bg-gray-900">
-        {currentScreen === "home" && (
+      <div className="min-h-screen w-screen bg-background flex flex-col overflow-x-hidden">
+        <div className="flex-1 bg-gray-50 dark:bg-gray-900">
+          {currentScreen === "home" && (
           <HomeScreen
             onNavigate={handleNavigate}
             accessToken={accessToken}
@@ -457,6 +519,7 @@ export default function App() {
             hasActivePlan={true}
             remainingGenerations={remainingGenerations}
             tier={effectiveTier}
+            onRefresh={refreshAppData}
           />
         )}
         {currentScreen === "submit" && (
@@ -508,14 +571,20 @@ export default function App() {
           />
         )}
         {currentScreen === "profile" && (
-          <ProfileScreen onNavigate={handleNavigate} onLogout={handleLogout} accessToken={accessToken} />
+          <ProfileScreen 
+            onNavigate={handleNavigate} 
+            onLogout={handleLogout} 
+            accessToken={accessToken} 
+            tier={effectiveTier}
+            subscriptionData={fullSubscription}
+          />
         )}
         {currentScreen === "notifications" && (
           <NotificationScreen 
             onNavigate={handleNavigate} 
             accessToken={accessToken} 
             isProUser={isProOrElite}
-            onRefreshSubscription={() => accessToken && loadSubscription(accessToken)}
+            onRefreshSubscription={refreshAppData}
           />
         )}
         {currentScreen === "privacy" && (
@@ -531,6 +600,7 @@ export default function App() {
             initialPlan={selectedStrategyId}
             onTierUpdated={(t) => {
               setTier(t);
+              refreshAppData(); // Re-fetch everything when tier changes
               if (userId) {
                 try { window.localStorage.removeItem(`first-login:${userId}`); } catch {}
               }
@@ -544,12 +614,33 @@ export default function App() {
           />
         )}
         {currentScreen === "update-password" && (
-          <UpdatePasswordScreen />
+          <UpdatePasswordScreen onNavigate={handleNavigate} />
+        )}
+        {currentScreen === "journal" && (
+          <JournalHomeScreen 
+            onNavigate={handleNavigate} 
+            accessToken={accessToken}
+            tier={effectiveTier}
+          />
+        )}
+        {currentScreen === "journal-entry" && (
+          <TradeEntryForm 
+            onNavigate={handleNavigate} 
+            accessToken={accessToken}
+          />
+        )}
+        {currentScreen === "journal-report" && (
+          <JournalReportScreen 
+            onNavigate={handleNavigate} 
+            accessToken={accessToken}
+            analysisId={selectedStrategyId || undefined}
+          />
         )}
       </div>
 
       <BottomNav
         activeTab={activeTab}
+        isEliteUser={isElite}
         onTabChange={(tab: string) => {
           const tabToScreen: Record<string, string> = {
             home: "home",
@@ -557,6 +648,7 @@ export default function App() {
             convert: "convert",
             analyze: "analyze",
             profile: "profile",
+            journal: "journal",
           };
           const nextScreen = tabToScreen[tab];
           // Delegate to navigate to enforce route protection
@@ -566,7 +658,7 @@ export default function App() {
       <HelpBubble activeTab={activeTab} onNavigate={handleNavigate} />
 
       <Toaster />
-      </>
+    </div>
     </ThemeProvider>
   );
 }

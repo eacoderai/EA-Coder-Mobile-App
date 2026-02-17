@@ -223,8 +223,8 @@ app.post('/make-server-00a119be/signup', async (c) => {
     try {
       const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email });
       if (!linkErr && linkData) {
-        const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Confirm your signup</h1><p>Hello ${name},</p><p>Click the button below to confirm and sign in:</p><a href="${linkData.action_link}" style="background:#1f2937;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Confirm and Sign In</a><p>This link expires in 24 hours.</p><p>EA Coder</p></div>`;
-        const ok = await sendEmailResend(email, 'Confirm your EA Coder account', html);
+        const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Confirm your signup</h1><p>Hello ${name},</p><p>Click the button below to confirm and sign in:</p><a href="${linkData.action_link}" style="background:#1f2937;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Confirm and Sign In</a><p>This link expires in 24 hours.</p><p>EACoder AI</p></div>`;
+        const ok = await sendEmailResend(email, 'Confirm your EACoder AI account', html);
         const emailHash = await hashIdentity(email);
         await kv.set(`audit:email:${Date.now()}:${emailHash}`, { event: ok ? 'magiclink_sent' : 'magiclink_send_failed', email_hash: emailHash, kind: 'signup' });
         if (!ok) {
@@ -265,7 +265,7 @@ app.post('/make-server-00a119be/forgot-password', async (c) => {
     const { data, error } = await supabase.auth.admin.generateLink({ type: 'recovery', email });
     if (!error && data) {
       const name = data.user.user_metadata?.name || 'User';
-      const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Password Reset</h1><p>Hello ${name},</p><p>Click the button below to reset your password:</p><a href="${data.action_link}" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Reset Password</a><p>This link expires in 1 hour.</p><p>EA Coder</p></div>`;
+      const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Password Reset</h1><p>Hello ${name},</p><p>Click the button below to reset your password:</p><a href="${data.action_link}" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Reset Password</a><p>This link expires in 1 hour.</p><p>EACoder AI</p></div>`;
       const ok = await sendEmailResend(email, 'Password Reset', html);
       if (ok) return c.json({ message: 'Password reset email sent successfully.' });
     }
@@ -296,8 +296,8 @@ app.post('/make-server-00a119be/magic/request', async (c) => {
     await kv.set(rateKey, rate);
     const { data, error } = await supabase.auth.admin.generateLink({ type: 'magiclink', email });
     if (error || !data) return c.json({ message: 'Failed to issue magic link' }, 500);
-    const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Your Magic Link</h1><p>Hello,</p><p>Click to sign in:</p><a href="${data.action_link}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Sign In</a><p>This link expires in 24 hours.</p><p>EA Coder</p></div>`;
-    const ok = await sendEmailResend(email, 'Your EA Coder Magic Link', html);
+    const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Your Magic Link</h1><p>Hello,</p><p>Click to sign in:</p><a href="${data.action_link}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Sign In</a><p>This link expires in 24 hours.</p><p>EACoder AI</p></div>`;
+    const ok = await sendEmailResend(email, 'Your EACoder AI Magic Link', html);
     const emailHash2 = await hashIdentity(email);
     await kv.set(`audit:email:${Date.now()}:${emailHash2}`, { event: ok ? 'magiclink_sent' : 'magiclink_send_failed', email_hash: emailHash2, kind: 'request' });
     if (!ok) {

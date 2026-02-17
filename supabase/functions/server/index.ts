@@ -148,8 +148,8 @@ async function updatePlanAtomic(userId: string, plan: 'free' | 'pro' | 'elite', 
           toEmail = error ? '' : String(data?.user?.email || '');
         } catch { void 0; }
         if (toEmail) {
-          const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto"><h2>Free Plan Activated</h2><p>Your Free plan is now active.</p><p>Features: 1 EA generation, MQL5 support.</p><p>Start building in EA Coder.</p><p>EA Coder</p></div>`;
-          await sendEmailResend(toEmail, 'Your EA Coder Plan Activated: Free', html);
+          const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto"><h2>Free Plan Activated</h2><p>Your Free plan is now active.</p><p>Features: 1 EA generation, MQL5 support.</p><p>Start building in EACoder AI.</p><p>EACoder AI</p></div>`;
+          await sendEmailResend(toEmail, 'Your EACoder AI Plan Activated: Free', html);
         }
       } catch { void 0; }
     }
@@ -209,7 +209,7 @@ async function sendEmailResend(to: string, subject: string, html: string) {
     let lastErr: unknown = null;
     while (attempt < max) {
       const { error } = await resend.emails.send({ 
-        from: 'EA Coder <team@eacoderai.xyz>', 
+        from: 'EACoder AI <team@eacoderai.xyz>', 
         to: [to], 
         subject, 
         html 
@@ -420,7 +420,7 @@ api.post('/signup', async (c) => {
         const serverUrl = envGet('SUPABASE_URL') || 'https://iixyfjipzvrfuzlxaneb.supabase.co';
         const href = `${serverUrl}/functions/v1/server/magic/confirm?token=${confirmId}`;
         const html = EmailConfirmationTemplate(href, nameStr, siteUrl());
-        const ok = await sendEmailResend(emailStr, 'Confirm your EA Coder account', html);
+        const ok = await sendEmailResend(emailStr, 'Confirm your EACoder AI account', html);
         const emailHash = await hashIdentity(emailStr);
         await kv.set(`audit:email:${Date.now()}:${emailHash}`, { event: ok ? 'magiclink_sent' : 'magiclink_send_failed', email_hash: emailHash, kind: 'signup' });
         if (!ok) {
@@ -595,7 +595,7 @@ export async function requestPasswordReset(email: string): Promise<{ token: stri
   const href = safeRedirectUrl(`/reset-password?token=${token}`) || `${siteUrl()}/reset-password?token=${token}`;
   const name = String((found as { user_metadata?: Record<string, unknown> }).user_metadata?.name || 'User');
   const html = ForgotPasswordTemplate(href, name);
-  await sendEmailResend(String(email), 'Reset your EA Coder password', html);
+  await sendEmailResend(String(email), 'Reset your EACoder AI password', html);
   return { token, href };
 }
 export async function confirmPasswordReset(token: string, password: string): Promise<boolean> {
@@ -641,8 +641,8 @@ api.post('/magic/request', async (c) => {
     const expires = Date.now() + 24 * 60 * 60 * 1000;
     await kv.set(`magic:${id}`, { email, action_link: String(linkData.properties?.action_link || ''), expires_at: expires, used: false });
     const href = safeRedirectUrl(`/magic/confirm?token=${id}`);
-    const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Your Magic Link</h1><p>Hello,</p><p>Click to sign in:</p><a href="${href}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Sign In</a><p>This link expires in 24 hours and is single-use.</p><p>EA Coder</p></div>`;
-    const ok = await sendEmailResend(email, 'Your EA Coder Magic Link', html);
+    const html = `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h1>Your Magic Link</h1><p>Hello,</p><p>Click to sign in:</p><a href="${href}" style="background:#111827;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Sign In</a><p>This link expires in 24 hours and is single-use.</p><p>EACoder AI</p></div>`;
+    const ok = await sendEmailResend(email, 'Your EACoder AI Magic Link', html);
     const emailHash2 = await hashIdentity(email);
     await kv.set(`audit:email:${Date.now()}:${emailHash2}`, { event: ok ? 'magiclink_sent' : 'magiclink_send_failed', email_hash: emailHash2, kind: 'request' });
     if (!ok) {
@@ -903,11 +903,156 @@ api.get('/strategies', async (c) => {
   const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
   
   if (!user) {
+    console.log('[GetStrategies] Unauthorized request - no user found');
     return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
   }
+
+  console.log(`[GetStrategies] Fetching strategies for user: ${user.id} (${user.email || 'no-email'})`);
   
   try {
-    const strategies = await kv.getByPrefix(`strategy:${user.id}:`);
+    const supabase = getSupabaseAdmin();
+    
+    // Fetch from Supabase as primary storage
+    const { data: dbStrategies, error: dbError } = await supabase
+      .from('strategies')
+      .select('*')
+      .eq('user_id', user.id);
+
+    if (dbError) {
+      console.error(`[GetStrategies] Supabase error for user ${user.id}:`, dbError);
+      throw dbError;
+    }
+
+    // Fetch from KV as secondary/fallback storage to ensure no strategies are lost
+    const kvStrategies = await kv.getByPrefix(`strategy:${user.id}:`);
+    
+    // Create a map of strategies by ID, starting with Supabase data
+    const strategyMap = new Map<string, any>();
+    
+    // Always perform a broad search if we have fewer than 1 strategy, 
+    // to ensure no "disappearing" strategies due to ID mismatches.
+    let rescueCount = 0;
+    const shouldRescue = (!dbStrategies || dbStrategies.length === 0) && (!kvStrategies || kvStrategies.length === 0);
+    
+    if (shouldRescue) {
+      console.log(`[GetStrategies] Broad search rescue for user: ${user.id} (${user.email})`);
+      try {
+        const { data: allKv } = await supabase
+          .from('kv_store_00a119be')
+          .select('key, value')
+          .filter('key', 'ilike', 'strategy:%');
+        
+        if (allKv) {
+          const matches = allKv.filter((item: any) => {
+            const val = item.value;
+            if (!val) return false;
+            
+            // Match by exact user_id
+            if (val.user_id === user.id) return true;
+            
+            // Match by email if user_id doesn't match (rescue for ID changes)
+            if (user.email && val.user_email === user.email) {
+              console.log(`[GetStrategies] Found strategy ${val.id} via email match for user ${user.id}`);
+              return true;
+            }
+            
+            return false;
+          });
+          
+          if (matches.length > 0) {
+            console.log(`[GetStrategies] Rescue found ${matches.length} matching strategies`);
+            rescueCount = matches.length;
+            matches.forEach((m: any) => {
+              const s = m.value;
+              if (s && s.id && !strategyMap.has(s.id)) {
+                strategyMap.set(s.id, {
+                  id: s.id,
+                  strategy_name: s.strategy_name || 'Untitled Strategy',
+                  description: s.description,
+                  status: s.status,
+                  created_at: s.created_at,
+                  platform: s.platform || s.language || 'manual',
+                  strategy_type: s.strategy_type || 'manual',
+                  free_access: s.free_access
+                });
+              }
+            });
+          }
+        }
+      } catch (rescueErr) {
+        console.error('[GetStrategies] Rescue failed:', rescueErr);
+      }
+    }
+    
+    console.log(`[GetStrategies] User ${user.id}: found ${dbStrategies?.length || 0} in DB, ${kvStrategies?.length || 0} in KV, ${rescueCount} via rescue`);
+    
+    (dbStrategies || []).forEach((s: any) => {
+      strategyMap.set(s.id, {
+        id: s.id,
+        strategy_name: s.strategy_name || 'Untitled Strategy',
+        description: s.description,
+        status: s.status,
+        created_at: s.created_at,
+        platform: s.platform || s.language || 'manual',
+        strategy_type: s.strategy_type || 'manual'
+      });
+    });
+
+    // Merge KV strategies, which might contain items not yet synced to Supabase
+    const missingInDb: any[] = [];
+    (kvStrategies || []).forEach((s: any) => {
+      if (s && s.id) {
+        if (!strategyMap.has(s.id)) {
+          missingInDb.push(s);
+        }
+        // Always update map with latest from KV as it contains full details including generated_code
+        strategyMap.set(s.id, {
+          id: s.id,
+          strategy_name: s.strategy_name || 'Untitled Strategy',
+          description: s.description,
+          status: s.status,
+          created_at: s.created_at,
+          platform: s.platform || 'manual',
+          strategy_type: s.strategy_type || 'manual',
+          free_access: s.free_access
+        });
+      }
+    });
+
+    // Lazy sync: If items are in KV but missing in Supabase DB, try to sync them now
+    if (missingInDb.length > 0) {
+      console.log(`[GetStrategies] Found ${missingInDb.length} strategies in KV missing from DB. Attempting lazy sync...`);
+      const syncPromises = missingInDb.map(async (strategy) => {
+        try {
+          await supabase.from('strategies').insert({
+            id: strategy.id,
+            user_id: user.id,
+            strategy_name: strategy.strategy_name,
+            description: strategy.description,
+            status: strategy.status,
+            input: {
+              risk_management: strategy.risk_management,
+              instrument: strategy.instrument,
+              analysis_instrument: strategy.analysis_instrument,
+              platform: strategy.platform,
+              indicators: strategy.indicators,
+              indicator_mode: strategy.indicator_mode
+            },
+            output_code: strategy.generated_code || '',
+            language: strategy.platform || 'manual',
+            strategy_type: strategy.strategy_type || 'manual',
+            created_at: strategy.created_at
+          });
+          return true;
+        } catch (e) {
+          console.error(`[GetStrategies] Lazy sync failed for strategy ${strategy.id}:`, e);
+          return false;
+        }
+      });
+      await Promise.allSettled(syncPromises);
+    }
+
+    const strategies = Array.from(strategyMap.values());
 
     // Sort by created_at ascending to compute first 1 free tier for legacy items
     const asc = strategies.slice().sort((a: any, b: any) =>
@@ -935,7 +1080,17 @@ api.get('/strategies', async (c) => {
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
-    return c.json({ strategies: sortedDesc });
+    return c.json({ 
+      strategies: sortedDesc,
+      _debug: {
+        storage: kv.isMemoryFallback ? 'memory (not persisted!)' : 'supabase',
+        dbCount: dbStrategies?.length || 0,
+        kvCount: kvStrategies?.length || 0,
+        rescueCount: rescueCount,
+        userId: user.id,
+        userEmail: user.email
+      }
+    });
   } catch (error: any) {
     console.log('Get strategies error:', error);
     return respondError(c, 500, 'strategies_list_failed', 'Failed to fetch strategies.', { errorMessage: error?.message });
@@ -1025,6 +1180,7 @@ api.post('/strategies', async (c) => {
     const strategy = {
       id: strategyId,
       user_id: user.id,
+      user_email: user.email, // Store email for rescue searches
       strategy_name: strategy_name || 'Untitled Strategy',
       description,
       risk_management: risk_management || '',
@@ -1040,20 +1196,57 @@ api.post('/strategies', async (c) => {
       free_access: false
     };
 
-    // Attempt to persist the strategy
+    // Attempt to persist the strategy to KV
     try {
       await kv.set(`strategy:${user.id}:${strategyId}`, strategy);
     } catch (storageErr: any) {
-      await kv.set(`audit:${user.id}:strategy.create.storage_failed:${Date.now()}`, {
-        event: 'strategy.create.storage_failed',
-        route: c.req.path,
-        createdAt: new Date().toISOString(),
-        error: String(storageErr?.message || storageErr),
-      }).catch(() => {});
-      return respondError(c, 503, 'storage_unavailable', 'Storage unavailable — cannot save strategy at this time', {
-        errorMessage: storageErr?.message || 'Unknown storage error',
-      });
+      console.error('KV storage failed:', storageErr);
     }
+
+    // Also persist to Supabase strategies table to satisfy foreign keys
+    // Robust sync with retries
+    let dbSynced = false;
+    for (let i = 0; i < 3; i++) {
+      try {
+        const supabase = getSupabaseAdmin();
+        const { error: dbErr } = await supabase.from('strategies').insert({
+          id: strategyId,
+          user_id: user.id,
+          strategy_name: strategy.strategy_name,
+          description: strategy.description,
+          status: strategy.status,
+          input: {
+            risk_management: strategy.risk_management,
+            instrument: strategy.instrument,
+            analysis_instrument: strategy.analysis_instrument,
+            platform: strategy.platform,
+            indicators: strategy.indicators,
+            indicator_mode: strategy.indicator_mode
+          },
+          output_code: strategy.generated_code,
+          language: strategy.platform,
+          strategy_type: strategy.strategy_type,
+          created_at: strategy.created_at
+        });
+
+        if (!dbErr) {
+          dbSynced = true;
+          break;
+        }
+        console.warn(`[CreateStrategy] Supabase sync attempt ${i+1} failed for user ${user.id}:`, dbErr);
+        if (i < 2) await sleep(500 * (i + 1)); // Exponential backoff
+      } catch (dbErr: any) {
+        console.error(`[CreateStrategy] Supabase sync attempt ${i+1} exception for user ${user.id}:`, dbErr);
+        if (i < 2) await sleep(500 * (i + 1));
+      }
+    }
+
+    if (!dbSynced) {
+      console.error(`[CreateStrategy] CRITICAL: Failed to sync strategy ${strategyId} to Supabase after 3 attempts. Strategy is only in KV.`);
+      // We still return success because KV is the source of truth, but now we've logged it heavily
+      // and the GET endpoint's lazy sync will attempt to fix it on next refresh.
+    }
+
     // For free users: mark free_access for first successful strategy
     if (!isProOrElite) {
       try {
@@ -1187,6 +1380,117 @@ api.get('/strategies/:id', async (c) => {
     const msg = error instanceof Error ? error.message : String(error);
     console.log('Get strategy error:', msg);
     return respondError(c, 500, 'strategy_load_failed', 'Failed to load strategy.', { errorMessage: msg });
+  }
+});
+
+// Update strategy (PATCH)
+api.patch('/strategies/:id', async (c) => {
+  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
+  
+  if (!user) {
+    return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
+  }
+  
+  try {
+    const strategyId = c.req.param('id');
+    const body = await c.req.json();
+    const { 
+      strategy_name, 
+      description, 
+      risk_management, 
+      instrument, 
+      platform, 
+      indicators, 
+      indicator_mode,
+      strategy_type 
+    } = body;
+
+    // Load existing strategy
+    const existingStrategy = await kv.get(`strategy:${user.id}:${strategyId}`);
+    if (!existingStrategy) {
+      return respondError(c, 404, 'not_found', 'Strategy not found.');
+    }
+
+    // Update strategy fields
+    const updatedStrategy = {
+      ...existingStrategy,
+      strategy_name: strategy_name || existingStrategy.strategy_name,
+      description: description || existingStrategy.description,
+      risk_management: risk_management || existingStrategy.risk_management,
+      instrument: instrument || existingStrategy.instrument,
+      platform: platform || existingStrategy.platform,
+      indicators: Array.isArray(indicators) ? indicators.filter(Boolean) : existingStrategy.indicators,
+      indicator_mode: indicator_mode || existingStrategy.indicator_mode,
+      strategy_type: strategy_type || existingStrategy.strategy_type,
+      status: 'pending', // Reset status for re-generation
+      updated_at: new Date().toISOString()
+    };
+
+    // Persist updated strategy
+    try {
+      await kv.set(`strategy:${user.id}:${strategyId}`, updatedStrategy);
+    } catch (storageErr: any) {
+      return respondError(c, 503, 'storage_unavailable', 'Storage unavailable — cannot update strategy at this time');
+    }
+
+    // Trigger AI code generation in background (similar to POST /strategies)
+    (async () => {
+      let retryCount = 0;
+      const maxRetries = 3;
+      const baseDelay = 1000;
+
+      while (retryCount < maxRetries) {
+        try {
+          console.log(`[AI][Update] Generating code for strategy ${strategyId} (attempt ${retryCount + 1})`);
+          const generatedCode = await generateCodeWithAI(
+            updatedStrategy.platform, 
+            updatedStrategy.description, 
+            updatedStrategy.risk_management, 
+            updatedStrategy.instrument, 
+            { 
+              indicators: updatedStrategy.indicators, 
+              indicator_mode: (updatedStrategy.indicator_mode === 'single' || updatedStrategy.indicator_mode === 'multiple') ? updatedStrategy.indicator_mode : 'multiple',
+              strategy_type: updatedStrategy.strategy_type
+            }
+          );
+          
+          updatedStrategy.status = 'generated';
+          updatedStrategy.generated_code = generatedCode;
+          await kv.set(`strategy:${user.id}:${strategyId}`, updatedStrategy);
+          
+          console.log(`[AI][Update] Successfully generated code for strategy ${strategyId}`);
+
+          // Audit success
+          await kv.set(`audit:${user.id}:strategy.update.success:${Date.now()}`, {
+            event: 'strategy.update.success',
+            strategyId,
+            route: c.req.path,
+            createdAt: new Date().toISOString(),
+          }).catch(() => {});
+          return;
+          
+        } catch (error: unknown) {
+          retryCount++;
+          const errMsg = error instanceof Error ? error.message : String(error);
+          console.log(`[AI][Update] Error for strategy ${strategyId} (attempt ${retryCount}):`, errMsg);
+
+          if (retryCount >= maxRetries) {
+            console.log('AI code generation final failure for strategy update', strategyId, ':', errMsg);
+            updatedStrategy.status = 'pending';
+            await kv.set(`strategy:${user.id}:${strategyId}`, updatedStrategy);
+            return;
+          }
+          const delay = baseDelay * Math.pow(2, retryCount - 1);
+          await new Promise<void>(resolve => setTimeout(resolve, delay));
+        }
+      }
+    })();
+    
+    return c.json({ strategyId, message: 'Strategy updated and submitted for AI code generation' });
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.log('Update strategy error:', msg);
+    return respondError(c, 500, 'strategy_update_failed', 'Failed to update strategy.', { errorMessage: msg });
   }
 });
 
@@ -2312,8 +2616,8 @@ api.post('/payments/webhook', async (c) => {
         if (toEmail && RESEND_API_KEY) {
           const amountUsd = (ch.amount || 0) / 100;
           const last4 = String(pmd?.card?.last4 || '');
-          const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto"><h2>Payment Receipt</h2><p>Thank you for your payment.</p><p>Amount: $${amountUsd.toFixed(2)} ${ch.currency?.toUpperCase() || 'USD'}</p><p>Card: **** **** **** ${last4}</p><p><a href="${String(ch.receipt_url || '')}">View Stripe receipt</a></p><p>EA Coder</p></div>`;
-          await sendEmailResend(toEmail, 'Your EA Coder Receipt', html);
+          const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto"><h2>Payment Receipt</h2><p>Thank you for your payment.</p><p>Amount: $${amountUsd.toFixed(2)} ${ch.currency?.toUpperCase() || 'USD'}</p><p>Card: **** **** **** ${last4}</p><p><a href="${String(ch.receipt_url || '')}">View Stripe receipt</a></p><p>EACoder AI</p></div>`;
+          await sendEmailResend(toEmail, 'Your EACoder AI Receipt', html);
         }
         try {
           const md = ch.metadata as Record<string, string> | null;
@@ -2687,8 +2991,8 @@ api.post('/subscription/webhook', async (c) => {
                 } catch { void 0; }
               }
               if (toEmail && RESEND_API_KEY) {
-                const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto"><h2>${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Activated</h2><p>Your plan is now active.</p><p>Features: Unlimited generations, weekly AI re-analysis, smart notifications.</p><p>Enjoy advanced features in EA Coder.</p><p>EA Coder</p></div>`;
-                await sendEmailResend(toEmail, `Your EA Coder Plan Activated: ${plan.charAt(0).toUpperCase() + plan.slice(1)}`, html);
+                const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto"><h2>${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Activated</h2><p>Your plan is now active.</p><p>Features: Unlimited generations, weekly AI re-analysis, smart notifications.</p><p>Enjoy advanced features in EACoder AI.</p><p>EACoder AI</p></div>`;
+                await sendEmailResend(toEmail, `Your EACoder AI Plan Activated: ${plan.charAt(0).toUpperCase() + plan.slice(1)}`, html);
               }
             } catch { void 0; }
           }
@@ -3103,13 +3407,14 @@ api.get('/strategies/:id/next-analysis', async (c) => {
     const strategyId = c.req.param('id');
     const next = await kv.get(`analysis:${user.id}:${strategyId}:next`);
 
-    // If user is pro and analysis is due, auto-run and reschedule
+    // If user is pro/elite and analysis is due, auto-run and reschedule
     const subscription = await kv.get(`user:${user.id}:subscription`);
-    const isPro = !!subscription && subscription.plan === 'pro';
+    const plan = subscription?.plan;
+    const isPremium = !!subscription && (plan === 'pro' || plan === 'elite');
     const now = Date.now();
     const nextAt = next?.nextAnalysisDate ? new Date(next.nextAnalysisDate).getTime() : null;
 
-    if (isPro && nextAt && now >= nextAt) {
+    if (isPremium && nextAt && now >= nextAt) {
       const strategy = await kv.get(`strategy:${user.id}:${strategyId}`);
       if (strategy) {
         let improvements: string[];
@@ -3166,8 +3471,9 @@ api.post('/analysis/schedule/run', async (c) => {
 
   try {
     const subscription = await kv.get(`user:${user.id}:subscription`);
-    const isPro = !!subscription && subscription.plan === 'pro';
-    if (!isPro) {
+    const plan = subscription?.plan;
+    const isPremium = !!subscription && (plan === 'pro' || plan === 'elite');
+    if (!isPremium) {
       return respondError(c, 403, 'feature_restricted', 'Pro subscription required', { redirect: '/subscription' });
     }
 
@@ -3674,6 +3980,353 @@ api.post('/admin/backfill-names', async (c) => {
     const emsg = err instanceof Error ? err.message : String(err);
     console.error('Backfill exception:', emsg);
     return respondError(c, 500, 'admin_backfill_failed', 'Backfill failed');
+  }
+});
+
+// --- Journal Analyzer Endpoints ---
+
+const JOURNAL_SYSTEM_PROMPT = `# System Prompt: Elite Trading Journal Performance Analyzer
+Role: You are a high-performance quantitative trading coach specializing in psychological edge detection and technical execution auditing.
+
+Task: Analyze the provided trade history (CSV or log format) and strategy parameters. Your goal is to identify "Leak Points" (where money is lost due to deviation) and "Edge Strengths" (where the user excels).
+
+Analysis Requirements:
+1. Strategy Adherence: Compare actual trades against the linked strategy's rules (if provided). Highlight "Rogue Trades" (deviations).
+2. Psychological Edge: Identify patterns in time-of-day, asset class, or direction (long/short) that yield highest/lowest expectancy.
+3. Execution Audit: Analyze entry/exit precision. Are they leaving money on the table (early exits) or overstaying (missing targets)?
+4. Risk Integrity: Check if PnL per trade aligns with the strategy's risk rules. Flag any "Risk Blowing" spikes.
+
+Output Format (Markdown):
+# Trading Performance Audit: [Date Range]
+
+## 📊 Performance Summary
+- Total Trades: [X]
+- Win Rate: [X%]
+- Profit Factor: [X.X]
+- Strategy Adherence Score: [X/100]
+
+## 🚨 Critical Leak Points
+- [Point 1]: [Description of technical/psychological error]
+- [Point 2]: [Description]
+
+## ✅ Edge Strengths
+- [Strength 1]: [What they are doing right]
+- [Strength 2]: [Pattern to double down on]
+
+## 🎯 Recommendations
+- [Immediate Action]: [One tactical change for the next session]
+- [Plan Refinement]: [Suggestion for updating the trading plan]
+
+Tone: Professional, direct, data-driven, and highly encouraging for disciplined execution. Avoid generic advice; focus on the specific patterns in the data.`;
+
+async function generateJournalReportWithAI(trades: any[], strategy: any): Promise<string> {
+  const tradesContext = trades.map(t => ({
+    symbol: t.symbol,
+    direction: t.direction,
+    entry: t.entry_price,
+    exit: t.exit_price,
+    pnl: t.pnl,
+    date: t.executed_at,
+    notes: t.notes
+  }));
+
+  const messages: ClaudeMessage[] = [
+    { role: 'system', content: JOURNAL_SYSTEM_PROMPT },
+    { role: 'user', content: `Analyze these trades:
+Trades Data: ${JSON.stringify(tradesContext, null, 2)}
+Linked Strategy: ${strategy ? JSON.stringify({
+      description: strategy.description,
+      risk_management: strategy.risk_management,
+      instrument: strategy.instrument
+    }, null, 2) : 'No strategy linked.'}
+
+Please provide the performance audit report.` }
+  ];
+
+  return await callClaudeAPI(messages, 0.4, 4000);
+}
+
+// Log a trade
+api.post('/trades', async (c) => {
+  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
+  if (!user) return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
+
+  try {
+    const body = await c.req.json();
+    const { symbol, direction, entry_price, exit_price, pnl, notes, strategy_id, executed_at } = body;
+
+    if (!symbol || !direction || !entry_price || !exit_price || pnl === undefined) {
+      return respondError(c, 400, 'invalid_request', 'Missing required trade fields');
+    }
+
+    // Ensure strategy_id is a valid UUID or null
+    let cleanStrategyId = null;
+    if (strategy_id && strategy_id !== 'none' && strategy_id !== '') {
+      // Basic UUID format check to prevent DB syntax errors
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(strategy_id)) {
+        cleanStrategyId = strategy_id;
+      } else {
+        console.warn(`Invalid strategy_id received: ${strategy_id}, ignoring.`);
+      }
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from('trades')
+      .insert({
+        user_id: user.id,
+        symbol,
+        direction,
+        entry_price,
+        exit_price,
+        pnl,
+        notes,
+        strategy_id: cleanStrategyId,
+        executed_at: executed_at || new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase insert error:', error);
+      throw error;
+    }
+    return c.json({ trade: data });
+  } catch (error: any) {
+    console.error('Log trade error details:', {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint
+    });
+    return respondError(c, 500, 'log_trade_failed', error.message || 'Failed to log trade');
+  }
+});
+
+// Get trades count
+api.get('/trades/count', async (c) => {
+  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
+  if (!user) return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { count, error } = await supabase
+      .from('trades')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return c.json({ count: count || 0 });
+  } catch (error: any) {
+    console.error('Get trades count error:', error);
+    return respondError(c, 500, 'count_failed', 'Failed to get trades count');
+  }
+});
+
+// Get past analyses
+api.get('/journal-analyses', async (c) => {
+  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
+  if (!user) return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from('journal_analyses')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return c.json({ analyses: data || [] });
+  } catch (error: any) {
+    console.error('Get analyses error:', error);
+    return respondError(c, 500, 'fetch_analyses_failed', 'Failed to fetch analyses');
+  }
+});
+
+// Get specific analysis
+api.get('/journal-analyses/:id', async (c) => {
+  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
+  if (!user) return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
+
+  try {
+    const id = c.req.param('id');
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from('journal_analyses')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single();
+
+    if (error) throw error;
+    return c.json({ analysis: data });
+  } catch (error: any) {
+    console.error('Get analysis error:', error);
+    return respondError(c, 500, 'fetch_analysis_failed', 'Failed to fetch analysis');
+  }
+});
+
+api.delete('/journal-analyses/:id', async (c) => {
+  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
+  if (!user) return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
+
+  try {
+    const id = c.req.param('id');
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from('journal_analyses')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user.id);
+
+    if (error) throw error;
+    return c.json({ ok: true });
+  } catch (error: any) {
+    console.error('Delete analysis error:', error);
+    return respondError(c, 500, 'delete_failed', 'Failed to delete analysis');
+  }
+});
+
+api.post('/journal-analyses/generate', async (c) => {
+  const user = await getAuthenticatedUser(c.req.header('Authorization') || null);
+  if (!user) return respondError(c, 401, 'unauthorized', 'Please sign in to continue.');
+
+  // Tier check
+  const subscription = await kv.get(`user:${user.id}:subscription`);
+  if (!subscription || subscription.plan !== 'elite') {
+    return respondError(c, 403, 'elite_required', 'Upgrade to Elite for AI Trade Journaling');
+  }
+
+  try {
+    const url = new URL(c.req.url);
+    const force = (url.searchParams.get('force') || '').toLowerCase() === '1' || (url.searchParams.get('force') || '').toLowerCase() === 'true';
+    const supabase = getSupabaseAdmin();
+    
+    // Fetch last 50 trades
+    const { data: trades, error: tradesErr } = await supabase
+      .from('trades')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('executed_at', { ascending: false })
+      .limit(50);
+
+    if (tradesErr) throw tradesErr;
+    if (!trades || trades.length < 5) {
+      return respondError(c, 400, 'insufficient_data', 'At least 5 trades are required for analysis.');
+    }
+
+    // Use the actual total count from the DB for the unique identifier, 
+    // rather than the length of the fetched array which is capped at 50.
+    const { count: dbTotalCount, error: countErr } = await supabase
+      .from('trades')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', user.id);
+    
+    if (countErr) {
+      console.error('[Journal] Error fetching total trades count:', countErr);
+    }
+    
+    const totalTrades = dbTotalCount || trades.length;
+
+    // --- DUPLICATE PREVENTION CHECK ---
+    // Check if an analysis for the exact same trade count already exists for this user
+    // within a reasonable time window (e.g., last 24 hours) or just any existing one
+    // to prevent redundant AI calls and DB clutter.
+    const { data: existingAnalysis, error: checkErr } = await supabase
+      .from('journal_analyses')
+      .select('id, created_at')
+      .eq('user_id', user.id)
+      .eq('trades_count', totalTrades)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (checkErr) {
+      console.error('[Journal] Error checking for existing analysis:', checkErr);
+    }
+
+    if (!force && existingAnalysis) {
+      // If found, check if it was created in the last hour. If so, return it instead of regenerating.
+      const created = new Date(existingAnalysis.created_at).getTime();
+      const now = new Date().getTime();
+      const ageMs = now - created;
+      const oneHourMs = 60 * 60 * 1000;
+
+      if (ageMs < oneHourMs) {
+        console.log(`[Journal] Returning existing analysis ${existingAnalysis.id} (age: ${Math.round(ageMs/1000)}s) for user ${user.id}`);
+        // Re-fetch full data for the existing analysis
+        const { data: fullAnalysis } = await supabase
+          .from('journal_analyses')
+          .select('*')
+          .eq('id', existingAnalysis.id)
+          .single();
+        
+        if (fullAnalysis) {
+          return c.json({ analysis: fullAnalysis, cached: true });
+        }
+      }
+    }
+    // ----------------------------------
+
+    // Get the most linked strategy for context
+    const strategyCounts: Record<string, number> = {};
+    trades.forEach(t => {
+      if (t.strategy_id) {
+        strategyCounts[t.strategy_id] = (strategyCounts[t.strategy_id] || 0) + 1;
+      }
+    });
+    
+    let topStrategyId = Object.entries(strategyCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    let strategy = null;
+    if (topStrategyId) {
+      strategy = await kv.get(`strategy:${user.id}:${topStrategyId}`);
+    }
+
+    // Generate AI report
+    const reportText = await generateJournalReportWithAI(trades, strategy);
+
+    // Parse summary stats from analyzed trades (the subset we fetched)
+    const analyzedCount = trades.length;
+    const wins = trades.filter(t => Number(t.pnl) > 0).length;
+    const winRate = analyzedCount > 0 ? (wins / analyzedCount) * 100 : 0;
+    const grossProfit = trades.filter(t => Number(t.pnl) > 0).reduce((sum, t) => sum + Number(t.pnl), 0);
+    const grossLoss = Math.abs(trades.filter(t => Number(t.pnl) < 0).reduce((sum, t) => sum + Number(t.pnl), 0));
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 99 : 0);
+
+    const report_data = {
+      content: reportText,
+      stats: {
+        totalTrades: analyzedCount, // Number of trades in this specific report
+        winRate: winRate.toFixed(1),
+        profitFactor: profitFactor.toFixed(2),
+        grossProfit: grossProfit.toFixed(2),
+        grossLoss: grossLoss.toFixed(2)
+      },
+      period: {
+        start: trades[trades.length - 1].executed_at,
+        end: trades[0].executed_at
+      }
+    };
+
+    // Save analysis
+    const { data: analysis, error: saveErr } = await supabase
+      .from('journal_analyses')
+      .insert({
+        user_id: user.id,
+        report_data,
+        trades_count: totalTrades
+      })
+      .select()
+      .single();
+
+    if (saveErr) throw saveErr;
+    return c.json({ analysis });
+
+  } catch (error: any) {
+    console.error('Generate journal report error:', error);
+    return respondError(c, 500, 'generation_failed', 'Failed to generate AI report');
   }
 });
 

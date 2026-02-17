@@ -15,15 +15,15 @@ export function TermsScreen({ onNavigate }: TermsScreenProps) {
             </Button>
             <div>
               <h1 className="text-lg text-gray-900 dark:text-white">Terms & Conditions</h1>
-              <p className="text-xs text-gray-600 dark:text-gray-400">EA Coder usage and limitations</p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">EACoder AI usage and limitations</p>
             </div>
           </div>
         </div>
 
         <div className="app-container flex-1 p-4 space-y-4">
           <div className="text-sm text-gray-800 dark:text-gray-200 space-y-3">
-            <p>EA Coder generates code for educational and research purposes. Trading involves risk. You are responsible for testing strategies thoroughly in demo environments before real use.</p>
-            <p>By using EA Coder, you agree to comply with platform terms (MetaTrader, TradingView) and local regulations.</p>
+            <p>EACoder AI generates code for educational and research purposes. Trading involves risk. You are responsible for testing strategies thoroughly in demo environments before real use.</p>
+            <p>By using EACoder AI, you agree to comply with platform terms (MetaTrader, TradingView) and local regulations.</p>
             <p>Pro and Elite features are subject to Fair Use policies and service availability.</p>
           </div>
         </div>

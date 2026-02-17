@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿import React, { useState } from "react";
+﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import React, { useState } from "react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { TrendingUp, Zap, Eye, EyeOff } from "lucide-react";
 import { supabase, getFunctionUrl } from '../utils/supabase/client';
-import { publicAnonKey } from '../utils/supabase/info';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { toast } from "../utils/tieredToast";
 import logoImage from "../assets/1525789d760b07ee395e05af9b06d7202ebb7883.png";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "./ui/dialog";
@@ -38,6 +38,8 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   // Reset password states
   const [showResetModal, setShowResetModal] = useState(false);
@@ -76,39 +78,51 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!loginEmail || !loginPassword) {
+      toast.error("Please enter both email and password");
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
+      console.log('[Auth] Attempting login for:', loginEmail);
+      
+      // Clear any potentially corrupted session before attempting new login
+      // Use the projectId from info or fallback to the one in the URL
+      const currentProjectId = projectId || 'iixyfjipzvrfuzlxaneb';
+      const storageKey = `sb-${currentProjectId}-auth-token`;
+      try {
+        window.localStorage.removeItem(storageKey);
+        await supabase.auth.signOut().catch(() => {});
+      } catch (e) {
+        console.warn('[Auth] Signout/Clear error (ignoring):', e);
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password: loginPassword,
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error('[Auth] Supabase Auth Error:', error);
+        // Handle specific network/timeout errors
+        const msg = error.message.toLowerCase();
+        if (msg.includes('fetch') || msg.includes('network') || error.name === 'AbortError' || error.name === 'TimeoutError' || error.message.includes('failed to fetch')) {
+          throw new Error('Connection failed. This is usually caused by an AdBlocker, VPN, or firewall blocking Supabase. Please disable blockers for this site and try again.');
+        }
+        throw error;
+      }
       
       if (data.session) {
-        // If a display name was captured during signup, persist it to auth metadata
-        try {
-          const pendingName = window.localStorage.getItem('pending.display_name');
-          const pendingEmail = window.localStorage.getItem('pending.display_email');
-          if (pendingName && pendingEmail && pendingEmail === loginEmail) {
-            await supabase.auth.updateUser({
-              data: {
-                display_name: pendingName,
-                full_name: pendingName
-              }
-            });
-            window.localStorage.removeItem('pending.display_name');
-            window.localStorage.removeItem('pending.display_email');
-          }
-        } catch (e) {
-          console.error('Failed to persist display name:', e);
-        }
-
-        toast.success(`Welcome back, ${loginEmail}!`);
+        console.log('[Auth] Login successful');
+        toast.success(`Welcome back!`);
         onAuthenticated();
+      } else {
+        throw new Error("Login failed: No session returned. Please try again.");
       }
     } catch (error: any) {
+      console.error('[Auth] Catch-all Login Error:', error);
       toast.error(error.message || "Login failed");
     } finally {
       setIsLoading(false);
@@ -131,7 +145,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
     setIsLoading(true);
     
     try {
-  const response = await fetch(getFunctionUrl('signup'), {
+      const response = await fetch(getFunctionUrl('signup'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -145,11 +159,12 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
         })
       });
       
-      const result = await response.json();
-      
       if (!response.ok) {
-        throw new Error(result.error || 'Signup failed');
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || `Signup failed (${response.status})`);
       }
+      
+      const result = await response.json();
       
       toast.success("Account created! Please click the link sent to your email. Then log in.");
       setActiveTab("login");
@@ -185,12 +200,12 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
             <img
               
               src={logoImage}
-              alt="EA Coder Logo"
+              alt="EACoder AI Logo"
               className="w-48 h-auto"
               style={{paddingTop: '20px' }}
             />
           </div>
-          <h1 className="text-3xl mb-2 text-gray-900 dark:text-white font-normal text-[32px]">EA Coder</h1>
+          <h1 className="text-3xl mb-2 text-gray-900 dark:text-white font-normal text-[32px]">EACoder AI</h1>
           <p className="text-gray-600 dark:text-gray-400">AI-Powered Trading Planner & Expert Advisor Generator</p>
         </div>
 
@@ -222,7 +237,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
               </TabsList>
               
               <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4">
+                <form onSubmit={handleLogin} className="space-y-6">
                   {/* Social Sign In removed */}
                   
                   <div className="flex justify-center text-xs uppercase pt-4">
@@ -272,19 +287,21 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                             setShowLoginPassword(!showLoginPassword);
                           }
                         }}
-                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10 translate-y-[3px]"
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10"
                       >
                         {showLoginPassword ? (
-                          <EyeOff className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                          <Eye className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
                         ) : (
-                          <Eye className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                          <EyeOff className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
                         )}
                       </span>
                     </div>
                   </div>
-                  <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Logging in..." : "Log In"}
-                  </Button>
+                  <div className="mt-8">
+                    <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
+                      {isLoading ? "Logging in..." : "Log In"}
+                    </Button>
+                  </div>
                   <div className="text-center">
                   <Button variant="link" className="text-sm" onClick={() => setShowResetModal(true)}>
                       Forgot Password?
@@ -294,7 +311,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
               </TabsContent>
               
               <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4">
+                <form onSubmit={handleSignup} className="space-y-6">
                   {/* Social Sign Up removed */}
                   
                   <div className="flex justify-center text-xs uppercase pt-4">
@@ -358,12 +375,12 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                             setShowSignupPassword(!showSignupPassword);
                           }
                         }}
-                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10 translate-y-[3px]"
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10"
                       >
                         {showSignupPassword ? (
-                          <EyeOff className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                          <Eye className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
                         ) : (
-                          <Eye className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                          <EyeOff className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
                         )}
                       </span>
                     </div>
@@ -395,19 +412,21 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                             setShowConfirmPassword(!showConfirmPassword);
                           }
                         }}
-                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10 pb-1 translate-y-[3px]"
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10"
                       >
                         {showConfirmPassword ? (
-                          <EyeOff className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                          <Eye className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
                         ) : (
-                          <Eye className="w-4 h-4 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                          <EyeOff className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
                         )}
                       </span>
                     </div>
                   </div>
-                  <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Creating account..." : "Sign Up"}
-                  </Button>
+                  <div className="mt-8">
+                    <Button type="submit" size="lg" className="w-full" disabled={isLoading}>
+                      {isLoading ? "Creating account..." : "Sign Up"}
+                    </Button>
+                  </div>
                 </form>
               </TabsContent>
             </Tabs>
@@ -422,23 +441,71 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="new-password">New Password</Label>
-                    <Input
-                      id="new-password"
-                      type="password"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      required
-                    />
+                    <div className="relative group w-full">
+                      <Input
+                        id="new-password"
+                        type={showNewPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        required
+                        className="pr-10"
+                      />
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={showNewPassword ? "Hide password" : "Show password"}
+                        title={showNewPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showNewPassword}
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setShowNewPassword(!showNewPassword);
+                          }
+                        }}
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10"
+                      >
+                        {showNewPassword ? (
+                          <Eye className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                        ) : (
+                          <EyeOff className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                        )}
+                      </span>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="confirm-new-password">Confirm New Password</Label>
-                    <Input
-                      id="confirm-new-password"
-                      type="password"
-                      value={confirmNewPassword}
-                      onChange={(e) => setConfirmNewPassword(e.target.value)}
-                      required
-                    />
+                    <div className="relative group w-full">
+                      <Input
+                        id="confirm-new-password"
+                        type={showConfirmNewPassword ? "text" : "password"}
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        required
+                        className="pr-10"
+                      />
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={showConfirmNewPassword ? "Hide password" : "Show password"}
+                        title={showConfirmNewPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showConfirmNewPassword}
+                        onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setShowConfirmNewPassword(!showConfirmNewPassword);
+                          }
+                        }}
+                        className="absolute right-0 top-0 h-full w-10 cursor-pointer flex items-center justify-center z-10"
+                      >
+                        {showConfirmNewPassword ? (
+                          <Eye className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                        ) : (
+                          <EyeOff className="w-5 h-5 text-gray-600 dark:text-gray-300" aria-hidden="true" />
+                        )}
+                      </span>
+                    </div>
                   </div>
                   {updateError && <p className="text-destructive text-sm">{updateError}</p>}
                   {updateMessage && <p className="text-success text-sm">{updateMessage}</p>}
@@ -567,7 +634,7 @@ export function AuthScreen({ onAuthenticated, recovery = false, resetToken }: Au
         {/* Disclaimer */}
         <div className="mt-6 p-4 bg-amber-50 dark:bg-amber-900/20 rounded-lg border border-amber-200 dark:border-amber-800">
           <p className="text-xs text-amber-800 dark:text-amber-200">
-            <strong>Disclaimer:</strong> EA Coder generates algorithmic trading code and backtest analysis using AI. 
+            <strong>Disclaimer:</strong> EACoder AI generates algorithmic trading code and backtest analysis using AI. 
             This is not financial advice. Always test strategies on a demo account before live trading. 
             Past performance is not indicative of future results.
           </p>

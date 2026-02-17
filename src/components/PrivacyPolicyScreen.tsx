@@ -22,7 +22,7 @@ export function PrivacyPolicyScreen({ onNavigate }: PrivacyPolicyScreenProps) {
 
         <div className="app-container flex-1 p-4 space-y-4">
           <div className="text-sm text-gray-800 dark:text-gray-200 space-y-3">
-            <p>Your privacy matters. EA Coder uses industry-standard encryption and secure storage practices to protect your account and strategies.</p>
+            <p>Your privacy matters. EACoder AI uses industry-standard encryption and secure storage practices to protect your account and strategies.</p>
             <p>We do not sell your data. Access is limited to necessary service operations, and you can request data deletion at any time.</p>
             <p>For detailed information, contact support via the Subscription page.</p>
           </div>
