@@ -961,6 +961,7 @@ export function SubmitStrategyScreen({ onNavigate, accessToken, tier, remainingG
         title="Submit Strategy"
         subtitle="Describe your trading idea"
         onBack={() => onNavigate('home')}
+        fixed
       />
 
       {/* Form */}

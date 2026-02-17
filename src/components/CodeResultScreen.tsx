@@ -657,6 +657,7 @@ export function CodeResultScreen({ strategyId, onNavigate, accessToken, isProUse
         textClassName="text-white"
         borderClassName=""
         paddingClassName="p-4 pb-10"
+        fixed
         rightContent={
           <div className="flex items-center gap-2">
             {(() => {

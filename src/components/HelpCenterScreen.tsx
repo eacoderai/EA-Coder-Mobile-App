@@ -148,6 +148,7 @@ export function HelpCenterScreen({ onNavigate, activeTab = "home" }: HelpCenterS
         leadingIcon={<HelpCircle className="w-5 h-5 text-white" />}
         paddingClassName="p-4"
         borderClassName="border-b border-border shadow-md"
+        fixed
       />
 
       <div className="app-container flex-1 flex flex-col overflow-hidden min-h-0">

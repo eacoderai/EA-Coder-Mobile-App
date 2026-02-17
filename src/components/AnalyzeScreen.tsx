@@ -545,6 +545,7 @@ export function AnalyzeScreen({ strategyId, onNavigate, accessToken, tier, remai
         onBack={() => onNavigate('home')}
         rightContent={<NotificationBell accessToken={accessToken} onNavigate={onNavigate} />}
         titleRightContent={tier ? <Badge variant="outline" className="ml-2 text-white border-white/30">{tier === 'free' ? 'Free Plan' : tier === 'pro' ? 'Pro' : 'Elite'}</Badge> : null}
+        fixed
       />
 
       <div className="flex-1 app-container w-full px-[9px] pt-3 safe-nav-pad overflow-x-hidden flex flex-col min-h-0 space-y-4">

@@ -422,6 +422,7 @@ export function JournalHomeScreen({ onNavigate, accessToken, tier }: JournalHome
         onBack={() => onNavigate('home')}
         leadingIcon={<LayoutDashboard className="w-5 h-5 text-white" />}
         rightContent={<NotificationBell accessToken={accessToken} onNavigate={onNavigate} />}
+        fixed
       />
 
       <div

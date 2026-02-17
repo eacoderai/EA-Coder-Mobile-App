@@ -282,6 +282,7 @@ export function NotificationScreen({ onNavigate, accessToken, isProUser, onRefre
         borderClassName=""
         bgClassName="bg-gradient-to-r from-blue-600 to-blue-800"
         textClassName="text-white"
+        fixed
         rightActions={
           unreadCount > 0
             ? ([{

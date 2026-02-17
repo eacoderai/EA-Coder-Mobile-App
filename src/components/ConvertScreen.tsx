@@ -4,13 +4,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
-import { ArrowLeft, Copy, Download, RefreshCw, Loader2, AlertTriangle, Lock } from "lucide-react";
+import { Copy, Download, RefreshCw, Loader2, AlertTriangle, Lock } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { Alert, AlertDescription } from "./ui/alert";
 import { projectId } from '../utils/supabase/info';
 import { toast } from "../utils/tieredToast";
 import { getFunctionUrl } from '../utils/supabase/client';
 import { NotificationBell } from "./ui/NotificationBell";
+import { Header } from "./Header";
 
 interface ConvertScreenProps {
   onNavigate: (screen: string) => void;
@@ -267,31 +268,17 @@ export function ConvertScreen({ onNavigate, accessToken, isProUser, isEliteUser,
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <div
-        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 pb-8 rounded-b-[30px] mb-4"
-        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
-      >
-        <div className="app-container flex items-center justify-between">
-          <div className="flex items-center">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => onNavigate('home')}
-              className="mr-3 text-white hover:bg-white/10"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div>
-              <h1 className="text-lg text-white">Code Converter</h1>
-              <p className="text-xs text-blue-100">
-                Convert between MQL4, MQL5, and Pine Script
-              </p>
-            </div>
-          </div>
-          <NotificationBell accessToken={accessToken} onNavigate={onNavigate} />
-        </div>
-      </div>
+      <Header
+        title="Code Converter"
+        subtitle="Convert between MQL4, MQL5, and Pine Script"
+        onBack={() => onNavigate('home')}
+        rightContent={<NotificationBell accessToken={accessToken} onNavigate={onNavigate} />}
+        bgClassName="bg-gradient-to-r from-blue-600 to-blue-800"
+        textClassName="text-white"
+        borderClassName=""
+        paddingClassName="p-6 pb-8"
+        fixed
+      />
 
       {/* Removed RestrictedBanner for basic users */}
 

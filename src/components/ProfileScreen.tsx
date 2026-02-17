@@ -167,6 +167,7 @@ export function ProfileScreen({ onLogout, onNavigate, accessToken, tier, subscri
         leadingIcon={<User className="w-6 h-6 text-white" />}
         rightContent={<NotificationBell accessToken={accessToken || null} onNavigate={onNavigate} />}
         paddingClassName="p-6 pb-12"
+        fixed
       />
 
   <div className="app-container flex-1 px-[9px] py-4 safe-nav-pad space-y-4">

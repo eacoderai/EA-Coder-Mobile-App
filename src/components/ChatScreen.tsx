@@ -351,6 +351,7 @@ export function ChatScreen({ strategyId, onNavigate, accessToken, isProUser, rem
         subtitle="Refine and tweak your strategy"
         onBack={() => onNavigate('home')}
         rightContent={<NotificationBell accessToken={accessToken} onNavigate={onNavigate} />}
+        fixed
       />
 
     {/* Removed default subscription banner for basic users.

@@ -27,6 +27,9 @@ export interface HeaderProps {
   textClassName?: string;
   className?: string;
   sticky?: boolean;
+  fixed?: boolean;
+  autoOffset?: boolean;
+  children?: React.ReactNode;
   rounded?: boolean;
   borderClassName?: string;
   paddingClassName?: string;
@@ -47,14 +50,42 @@ export function Header({
   textClassName = "text-white",
   className = "",
   sticky = true,
+  fixed = false,
+  autoOffset = true,
+  children,
   rounded = true,
   borderClassName = "",
   paddingClassName = "p-6",
 }: HeaderProps) {
   const safeTitle = typeof title === "string" && title.trim() ? title : "";
   const safeSubtitle = typeof subtitle === "string" && subtitle.trim() ? subtitle : "";
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const [headerHeight, setHeaderHeight] = React.useState<number>(0);
+  React.useLayoutEffect(() => {
+    if (!fixed) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      try {
+        const h = Math.ceil(el.getBoundingClientRect().height);
+        if (h !== headerHeight) setHeaderHeight(h);
+      } catch {}
+    };
+    update();
+    let ro: ResizeObserver | null = null;
+    try {
+      ro = new ResizeObserver(() => update());
+      ro.observe(el);
+    } catch {
+      const id = window.setInterval(update, 500);
+      return () => window.clearInterval(id);
+    }
+    return () => {
+      try { ro && ro.disconnect(); } catch {}
+    };
+  }, [fixed, paddingClassName, rounded, title, subtitle, leftContent, rightContent, leftActions, rightActions]);
   const containerClasses = [
-    sticky ? "sticky top-0 z-50" : "",
+    fixed ? "fixed top-0 left-0 right-0 z-50" : (sticky ? "sticky top-0 z-50" : ""),
     bgClassName,
     textClassName,
     borderClassName,
@@ -84,44 +115,48 @@ export function Header({
   );
 
   return (
-    <div role="region" aria-label={safeTitle || "Header"} className={containerClasses} style={rounded ? { borderBottomLeftRadius: 30, borderBottomRightRadius: 30 } : undefined}>
-      <div className="app-container flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {onBack && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onBack}
-              aria-label={backAriaLabel || "Go back"}
-              className="mr-1 text-white hover:bg-white/10"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-          )}
-          {leadingIcon && <div className="p-2 bg-white/20 rounded-lg">{leadingIcon}</div>}
-          {leftContent}
-          {(safeTitle || safeSubtitle) && (
-            <div>
-              {safeTitle && (
-                <div className="flex items-center gap-2">
-                  <h1 className="text-lg">{safeTitle}</h1>
-                  {titleRightContent}
-                </div>
-              )}
-              {safeSubtitle && <p className="text-xs opacity-80">{safeSubtitle}</p>}
-            </div>
-          )}
-          {Array.isArray(leftActions) && leftActions.length > 0 && (
-            <div className="ml-2 flex items-center gap-2">{leftActions.map(renderAction)}</div>
-          )}
+    <>
+      <div ref={containerRef} role="region" aria-label={safeTitle || "Header"} className={containerClasses} style={rounded ? { borderBottomLeftRadius: 30, borderBottomRightRadius: 30 } : undefined}>
+        <div className="app-container flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onBack}
+                aria-label={backAriaLabel || "Go back"}
+                className="mr-1 text-white hover:bg-white/10"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+            )}
+            {leadingIcon}
+            {leftContent}
+            {(safeTitle || safeSubtitle) && (
+              <div>
+                {safeTitle && (
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-lg">{safeTitle}</h1>
+                    {titleRightContent}
+                  </div>
+                )}
+                {safeSubtitle && <p className="text-xs opacity-80">{safeSubtitle}</p>}
+              </div>
+            )}
+            {Array.isArray(leftActions) && leftActions.length > 0 && (
+              <div className="ml-2 flex items-center gap-2">{leftActions.map(renderAction)}</div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {rightContent}
+            {Array.isArray(rightActions) && rightActions.length > 0 && (
+              <div className="flex items-center gap-2">{rightActions.map(renderAction)}</div>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          {rightContent}
-          {Array.isArray(rightActions) && rightActions.length > 0 && (
-            <div className="flex items-center gap-2">{rightActions.map(renderAction)}</div>
-          )}
-        </div>
+        {children ? <div className="app-container">{children}</div> : null}
       </div>
-    </div>
+      {fixed && autoOffset ? <div aria-hidden="true" style={{ height: headerHeight }} /> : null}
+    </>
   );
 }

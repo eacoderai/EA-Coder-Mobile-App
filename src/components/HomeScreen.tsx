@@ -10,6 +10,7 @@ import logoImage from "../assets/1525789d760b07ee395e05af9b06d7202ebb7883.png";
 import { toast } from "../utils/tieredToast";
 import { Progress } from "./ui/progress";
 import StrategyProgressCard from "./StrategyProgressCard";
+import { Header } from "./Header";
 
 interface Strategy {
   id: string;
@@ -138,67 +139,51 @@ export function HomeScreen({ onNavigate, accessToken, isProUser, hasActivePlan, 
 
   return (
       <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <div
-        className="sticky top-0 z-50 bg-gradient-to-r from-blue-600 to-blue-800 text-white p-6 rounded-b-[30px]"
-        style={{ borderBottomLeftRadius: 30, borderBottomRightRadius: 30 }}
+      <Header
+        title="EACoder AI"
+        subtitle="Your AI Trading Assistant"
+        leadingIcon={<img src={logoImage} alt="EACoder AI" className="w-16 h-auto relative top-[2px]" />}
+        rightContent={<NotificationBell accessToken={accessToken} onNavigate={onNavigate} />}
+        bgClassName="bg-gradient-to-r from-blue-600 to-blue-800"
+        textClassName="text-white"
+        paddingClassName="p-6"
+        borderClassName=""
+        fixed
       >
-        <div className="app-container">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center">
-              <div className="mr-3">
-                <img
-                  src={logoImage}
-                  alt="EACoder AI"
-                  className="w-16 h-auto relative top-[2px]"
-                />
-              </div>
-              <div>
-                <h1 className="text-2xl relative top-[2px]">EACoder AI</h1>
-                <p className="text-sm text-blue-100">Your AI Trading Assistant</p>
-              </div>
-            </div>
-            
-            {/* Notification Bell (standardized positioning) */}
-            <NotificationBell accessToken={accessToken} onNavigate={onNavigate} />
+        {showLimitBanner && (
+          <div className="pt-[8px] mb-4">
+            <StrategyProgressCard
+              currentCount={strategies.length}
+              totalLimit={currentLimit}
+              onUpgrade={(target) => onNavigate('subscription', target)}
+              tier={tier}
+            />
           </div>
-          
-          {/* Strategy creation progress card (Visible for Free and Pro users) */}
-          {showLimitBanner && (
-            <div className="pt-[8px] mb-4">
-              <StrategyProgressCard
-                currentCount={strategies.length}
-                totalLimit={currentLimit}
-                onUpgrade={(target) => onNavigate('subscription', target)}
-                tier={tier}
-              />
-            </div>
-          )}
-          <Button
-            onClick={() => {
-              const isLimitReached = currentLimit !== Infinity && strategies.length >= currentLimit;
-              if (isLimitReached) {
-                setShowQuotaPopup(true);
-              } else {
-                try { 
-                  if (typeof window !== 'undefined') {
-                    window.localStorage.setItem('reset-indicators-on-new-strategy', '1');
-                    window.localStorage.removeItem('submit:targetType');
-                    window.localStorage.removeItem('submit:initId');
-                    window.localStorage.removeItem('lastSelectedStrategyId');
-                  } 
-                } catch {}
-                onNavigate('submit');
-              }
-            }}
-            style={{ borderRadius: '30px'}}
-            className="w-full bg-white text-blue-600 hover:bg-blue-50 pt-[10px] mt-4"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Create New Strategy
-          </Button>
-      </div>
-    </div>
+        )}
+        <Button
+          onClick={() => {
+            const isLimitReached = currentLimit !== Infinity && strategies.length >= currentLimit;
+            if (isLimitReached) {
+              setShowQuotaPopup(true);
+            } else {
+              try { 
+                if (typeof window !== 'undefined') {
+                  window.localStorage.setItem('reset-indicators-on-new-strategy', '1');
+                  window.localStorage.removeItem('submit:targetType');
+                  window.localStorage.removeItem('submit:initId');
+                  window.localStorage.removeItem('lastSelectedStrategyId');
+                } 
+              } catch {}
+              onNavigate('submit');
+            }
+          }}
+          style={{ borderRadius: '30px'}}
+          className="w-full bg-white text-blue-600 hover:bg-blue-50 pt-[10px] mt-4"
+        >
+          <Plus className="w-5 h-5 mr-2" />
+          Create New Strategy
+        </Button>
+      </Header>
 
     {/* Removed Free plan generation banners and restrictions */}
 

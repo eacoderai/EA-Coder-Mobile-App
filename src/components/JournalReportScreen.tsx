@@ -244,6 +244,7 @@ export function JournalReportScreen({ onNavigate, accessToken, analysisId }: Jou
             <Share2 className="w-5 h-5" />
           </Button>
         }
+        fixed
       />
 
       <ScrollArea className="flex-1">
